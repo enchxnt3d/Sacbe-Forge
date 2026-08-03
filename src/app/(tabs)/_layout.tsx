@@ -1,17 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { useWindowDimensions } from "react-native";
 
 import { Colors } from "../../constants/colors";
 import { Typography } from "../../constants/typography";
 
+const MAX_TAB_BAR_WIDTH = 1200;
+const TAB_BAR_MARGIN = 20;
+
 export default function TabsLayout() {
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Keep the tab bar responsive and centered on web
+  const tabBarWidth = Math.min(
+    Math.max(screenWidth - TAB_BAR_MARGIN * 2, 0),
+    MAX_TAB_BAR_WIDTH,
+  );
+
+  const tabBarLeft = (screenWidth - tabBarWidth) / 2;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
           position: "absolute",
-          marginHorizontal: 20,
+          left: tabBarLeft,
+          width: tabBarWidth,
           bottom: 20,
           height: 70,
           borderRadius: 35,
