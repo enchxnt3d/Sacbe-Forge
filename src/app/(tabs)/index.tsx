@@ -60,7 +60,7 @@ const baseCourses: Course[] = [
     progress: 0,
     icon: "repeat",
     color: Colors.orange,
-    available: false,
+    available: true,
   },
   {
     id: 4,
@@ -70,7 +70,7 @@ const baseCourses: Course[] = [
     progress: 0,
     icon: "cube-outline",
     color: Colors.blue,
-    available: false,
+    available: true,
   },
   {
     id: 5,
@@ -80,7 +80,7 @@ const baseCourses: Course[] = [
     progress: 0,
     icon: "code-slash",
     color: Colors.warning,
-    available: false,
+    available: true,
   },
   {
     id: 6,
@@ -90,7 +90,7 @@ const baseCourses: Course[] = [
     progress: 0,
     icon: "lock-closed",
     color: Colors.pink,
-    available: false,
+    available: true,
   },
 ];
 
