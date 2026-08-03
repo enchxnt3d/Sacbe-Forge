@@ -14,9 +14,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../../constants/colors";
 import {
-  getThinkingInCodeLesson,
-  THINKING_IN_CODE_LESSON_ORDER,
-  THINKING_IN_CODE_PATH_ID,
+  getLesson,
+  getLessonOrder,
+  getPathForLesson,
 } from "../../constants/lessons";
 import { getLessonContent } from "../../content/lessonContent";
 import { useAuth } from "../../context/AuthContext";
@@ -41,22 +41,24 @@ export default function SkillCardScreen() {
 
   const { user, profile, authReady, profileReady } = useAuth();
 
-  // Load the lesson id from the route
   const cardIdParameter = params.cardId;
 
   const lessonId = Array.isArray(cardIdParameter)
     ? cardIdParameter[0]
     : cardIdParameter;
 
-  const lesson = lessonId ? getThinkingInCodeLesson(lessonId) : undefined;
+  const lesson = lessonId ? getLesson(lessonId) : undefined;
 
-  // Load the editable material for this lesson
+  const learningPath = lessonId ? getPathForLesson(lessonId) : undefined;
+
+  const pathId = learningPath?.id;
+
+  const lessonOrder = pathId ? getLessonOrder(pathId) : [];
+
   const lessonContent = lesson ? getLessonContent(lesson.id) : null;
 
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
-
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
-
   const [notes, setNotes] = useState<UserNote[]>([]);
   const [noteContent, setNoteContent] = useState("");
   const [dataReady, setDataReady] = useState(false);
@@ -69,16 +71,21 @@ export default function SkillCardScreen() {
       setPathProgress([]);
       setCompletedLessonIds([]);
       setDataReady(true);
+      return;
+    }
 
+    if (!pathId) {
+      setPathProgress([]);
+      setCompletedLessonIds([]);
+      setDataReady(true);
       return;
     }
 
     setDataReady(false);
 
-    // Listen to progress owned by the active Firebase user
     const unsubscribeProgress = subscribeToPathProgress(
       user.uid,
-      THINKING_IN_CODE_PATH_ID,
+      pathId,
       setPathProgress,
       (error) => {
         console.error("Path progress error:", error);
@@ -86,7 +93,6 @@ export default function SkillCardScreen() {
       },
     );
 
-    // Listen to completed lessons for unlocking nodes
     const unsubscribeCompleted = subscribeToCompletedLessonIds(
       user.uid,
       (lessonIds) => {
@@ -100,34 +106,28 @@ export default function SkillCardScreen() {
       },
     );
 
-    // Save the learning path selected by this user
-    void selectLearningPath(user.uid, THINKING_IN_CODE_PATH_ID).catch(
-      (error) => {
-        console.error("Selected path error:", error);
-      },
-    );
+    void selectLearningPath(user.uid, pathId).catch((error) => {
+      console.error("Selected path error:", error);
+    });
 
     return () => {
       unsubscribeProgress();
       unsubscribeCompleted();
     };
-  }, [user]);
+  }, [user, pathId]);
 
   useEffect(() => {
     if (!user || !lesson) {
       setNotes([]);
-
       return;
     }
 
-    // Keep notes synchronized for this lesson
     return subscribeToLessonNotes(user.uid, lesson.id, setNotes, (error) => {
       console.error("Lesson notes error:", error);
       setErrorMessage("Unable to load your notes");
     });
   }, [user, lesson]);
 
-  // Find the progress record for this lesson
   const currentProgress = lesson
     ? pathProgress.find((progress) => progress.lessonId === lesson.id)
     : undefined;
@@ -138,13 +138,10 @@ export default function SkillCardScreen() {
     ? completedLessonIds.includes(lesson.id)
     : false;
 
-  const lessonUnlocked = lesson
-    ? isLessonUnlocked(
-        lesson.id,
-        THINKING_IN_CODE_LESSON_ORDER,
-        completedLessonIds,
-      )
-    : false;
+  const lessonUnlocked =
+    lesson && learningPath
+      ? isLessonUnlocked(lesson.id, lessonOrder, completedLessonIds)
+      : false;
 
   function clearMessages() {
     setMessage("");
@@ -152,25 +149,19 @@ export default function SkillCardScreen() {
   }
 
   async function handleSaveProgress() {
-    if (!user || !lesson || lessonCompleted) {
+    if (!user || !lesson || !pathId || lessonCompleted) {
       return;
     }
 
     clearMessages();
 
-    // Increase unfinished progress in small testable steps
     const nextProgress =
       progressPercent === 0 ? 25 : Math.min(99, progressPercent + 25);
 
     try {
       setBusy(true);
 
-      await saveLessonProgress(
-        user.uid,
-        lesson.id,
-        THINKING_IN_CODE_PATH_ID,
-        nextProgress,
-      );
+      await saveLessonProgress(user.uid, lesson.id, pathId, nextProgress);
 
       setMessage(`Progress saved at ${nextProgress}%`);
     } catch (error) {
@@ -182,7 +173,7 @@ export default function SkillCardScreen() {
   }
 
   async function handleCompleteLesson() {
-    if (!user || !lesson || !lessonUnlocked) {
+    if (!user || !lesson || !pathId || !lessonUnlocked) {
       return;
     }
 
@@ -191,10 +182,9 @@ export default function SkillCardScreen() {
     try {
       setBusy(true);
 
-      // Complete the lesson and reward XP only once
       const result = await completeLesson(user.uid, {
         lessonId: lesson.id,
-        pathId: THINKING_IN_CODE_PATH_ID,
+        pathId,
         xpReward: lesson.xpReward,
       });
 
@@ -212,7 +202,7 @@ export default function SkillCardScreen() {
   }
 
   async function handleSaveNote() {
-    if (!user || !lesson || !noteContent.trim()) {
+    if (!user || !lesson || !pathId || !noteContent.trim()) {
       return;
     }
 
@@ -221,10 +211,9 @@ export default function SkillCardScreen() {
     try {
       setBusy(true);
 
-      // Save this note inside the active user document
       await saveUserNote(user.uid, {
         lessonId: lesson.id,
-        pathId: THINKING_IN_CODE_PATH_ID,
+        pathId,
         content: noteContent,
       });
 
@@ -258,7 +247,6 @@ export default function SkillCardScreen() {
     }
   }
 
-  // Wait for Auth and Firestore before showing the lesson
   if (!authReady || (user && !profileReady) || (user && !dataReady)) {
     return (
       <SafeAreaView style={styles.centeredScreen}>
@@ -294,7 +282,7 @@ export default function SkillCardScreen() {
     );
   }
 
-  if (!lesson) {
+  if (!lesson || !learningPath || !pathId) {
     return (
       <SafeAreaView style={styles.centeredScreen}>
         <Text style={styles.emptyTitle}>Lesson not found</Text>
@@ -340,7 +328,7 @@ export default function SkillCardScreen() {
             <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
           </Pressable>
 
-          <Text style={styles.pathName}>Thinking in Code</Text>
+          <Text style={styles.pathName}>{learningPath.title}</Text>
 
           <View style={styles.xpBadge}>
             <Ionicons name="sparkles" size={17} color={Colors.warning} />

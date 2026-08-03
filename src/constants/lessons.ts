@@ -6,8 +6,15 @@ export type LessonDefinition = {
   xpReward: number;
 };
 
-// Main learning path used by the first six lessons
+export type LearningPathDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  lessons: LessonDefinition[];
+};
+
 export const THINKING_IN_CODE_PATH_ID = "thinking-in-code";
+export const VARIABLES_AND_DATA_PATH_ID = "variables-and-data";
 
 export const THINKING_IN_CODE_LESSONS: LessonDefinition[] = [
   {
@@ -55,14 +62,122 @@ export const THINKING_IN_CODE_LESSONS: LessonDefinition[] = [
   },
 ];
 
-// Keep the lesson sequence available for unlocking logic
+export const VARIABLES_AND_DATA_LESSONS: LessonDefinition[] = [
+  {
+    id: "variables-data-introduction",
+    number: 1,
+    title: "Understanding Variables",
+    description:
+      "Learn how variables store information that programs can use later",
+    xpReward: 20,
+  },
+  {
+    id: "variables-data-declarations",
+    number: 2,
+    title: "Declaring Variables",
+    description:
+      "Create variables using const and let and understand when to use each",
+    xpReward: 25,
+  },
+  {
+    id: "variables-data-strings-numbers",
+    number: 3,
+    title: "Strings & Numbers",
+    description: "Work with text and numeric values in TypeScript programs",
+    xpReward: 25,
+  },
+  {
+    id: "variables-data-booleans",
+    number: 4,
+    title: "Boolean Values",
+    description:
+      "Represent true and false values and use them to describe program state",
+    xpReward: 30,
+  },
+  {
+    id: "variables-data-arrays",
+    number: 5,
+    title: "Arrays",
+    description:
+      "Store multiple related values together in an ordered collection",
+    xpReward: 35,
+  },
+  {
+    id: "variables-data-objects",
+    number: 6,
+    title: "Objects",
+    description: "Group related information together using key and value pairs",
+    xpReward: 40,
+  },
+];
+
+export const LEARNING_PATHS: LearningPathDefinition[] = [
+  {
+    id: THINKING_IN_CODE_PATH_ID,
+    title: "Thinking in Code",
+    description:
+      "Learn how programs use instructions, decisions, algorithms and repetition",
+    lessons: THINKING_IN_CODE_LESSONS,
+  },
+  {
+    id: VARIABLES_AND_DATA_PATH_ID,
+    title: "Variables & Data",
+    description:
+      "Learn how programs store and organize text, numbers and other values",
+    lessons: VARIABLES_AND_DATA_LESSONS,
+  },
+];
+
 export const THINKING_IN_CODE_LESSON_ORDER = THINKING_IN_CODE_LESSONS.map(
   (lesson) => lesson.id,
 );
 
-// Find the complete lesson information using its route id
+export const VARIABLES_AND_DATA_LESSON_ORDER = VARIABLES_AND_DATA_LESSONS.map(
+  (lesson) => lesson.id,
+);
+
+export function getLearningPath(
+  pathId: string,
+): LearningPathDefinition | undefined {
+  return LEARNING_PATHS.find((path) => path.id === pathId);
+}
+
+export function getLesson(lessonId: string): LessonDefinition | undefined {
+  for (const path of LEARNING_PATHS) {
+    const lesson = path.lessons.find(
+      (pathLesson) => pathLesson.id === lessonId,
+    );
+
+    if (lesson) {
+      return lesson;
+    }
+  }
+
+  return undefined;
+}
+
+export function getPathForLesson(
+  lessonId: string,
+): LearningPathDefinition | undefined {
+  return LEARNING_PATHS.find((path) =>
+    path.lessons.some((lesson) => lesson.id === lessonId),
+  );
+}
+
+export function getLessonOrder(pathId: string): string[] {
+  const path = getLearningPath(pathId);
+
+  return path?.lessons.map((lesson) => lesson.id) ?? [];
+}
+
 export function getThinkingInCodeLesson(
   lessonId: string,
 ): LessonDefinition | undefined {
   return THINKING_IN_CODE_LESSONS.find((lesson) => lesson.id === lessonId);
+}
+
+export function getVariablesAndDataLesson(
+  lessonId: string,
+): LessonDefinition | undefined {
+  return VARIABLES_AND_DATA_LESSONS.find((lesson) => lesson.id === lessonId);
 }
