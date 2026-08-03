@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Check that the active account owns this user path
+    function ownsUserData(userId) {
+      return request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+
+      // Create profiles only inside the correct user path
+      allow create: if ownsUserData(userId)
+        && request.resource.data.uid == userId;
+
+      // Keep profile access private to its owner
+      allow read, delete: if ownsUserData(userId);
+
+      // Prevent the saved uid from being changed
+      allow update: if ownsUserData(userId)
+        && request.resource.data.uid == userId;
+
+      // Protect progress, completions, achievements and notes
+      match /{userDocument=**} {
+        allow create, read, update, delete:
+          if ownsUserData(userId);
+      }
+    }
+  }
+}
