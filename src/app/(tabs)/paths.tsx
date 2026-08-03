@@ -1,8 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   LayoutChangeEvent,
   Pressable,
   ScrollView,
@@ -13,11 +14,26 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../../constants/colors";
+import {
+  THINKING_IN_CODE_LESSON_ORDER,
+  THINKING_IN_CODE_LESSONS,
+  THINKING_IN_CODE_PATH_ID,
+  type LessonDefinition,
+} from "../../constants/lessons";
+import { useAuth } from "../../context/AuthContext";
+import {
+  isLessonUnlocked,
+  subscribeToCompletedLessonIds,
+  subscribeToPathProgress,
+} from "../../services/progressService";
+import type { LessonProgress } from "../../types/progress";
 
 type Point = {
   x: number;
   y: number;
 };
+
+type LessonNodeState = "completed" | "active" | "locked";
 
 type ConnectorLineProps = {
   start: Point;
@@ -30,7 +46,7 @@ type LessonNodeProps = {
   number: number;
   title: string;
   status: string;
-  state: "completed" | "active" | "locked";
+  state: LessonNodeState;
   labelSide: "left" | "right";
   onPress?: () => void;
 };
@@ -92,7 +108,7 @@ function ConnectorLine({ start, end, active = false }: ConnectorLineProps) {
   );
 }
 
-function LevelBadge() {
+function LevelBadge({ level }: { level: number }) {
   return (
     <View style={styles.levelBadge}>
       <MaterialCommunityIcons
@@ -101,7 +117,7 @@ function LevelBadge() {
         color={Colors.primary}
       />
 
-      <Text style={styles.levelBadgeText}>2</Text>
+      <Text style={styles.levelBadgeText}>{level}</Text>
     </View>
   );
 }
@@ -259,42 +275,205 @@ function LessonNode({
   );
 }
 
+function findCurrentLesson(
+  progressByLesson: Map<string, LessonProgress>,
+  completedLessonIds: string[],
+): LessonDefinition {
+  // Continue the most recently updated unfinished lesson
+  const inProgressLessons = THINKING_IN_CODE_LESSONS.filter((lesson) => {
+    const progress = progressByLesson.get(lesson.id);
+
+    return (
+      progress?.status === "in-progress" &&
+      !completedLessonIds.includes(lesson.id)
+    );
+  }).sort((firstLesson, secondLesson) => {
+    const firstUpdatedAt =
+      progressByLesson.get(firstLesson.id)?.updatedAt?.toMillis() ?? 0;
+
+    const secondUpdatedAt =
+      progressByLesson.get(secondLesson.id)?.updatedAt?.toMillis() ?? 0;
+
+    return secondUpdatedAt - firstUpdatedAt;
+  });
+
+  if (inProgressLessons.length > 0) {
+    return inProgressLessons[0];
+  }
+
+  // New users and finished lessons continue with the first incomplete lesson
+  const firstIncompleteLesson = THINKING_IN_CODE_LESSONS.find(
+    (lesson) => !completedLessonIds.includes(lesson.id),
+  );
+
+  if (firstIncompleteLesson) {
+    return firstIncompleteLesson;
+  }
+
+  // Keep the last lesson available when the path is fully completed
+  return THINKING_IN_CODE_LESSONS[THINKING_IN_CODE_LESSONS.length - 1];
+}
+
 export default function PathsScreen() {
   const router = useRouter();
+  const { user, profile } = useAuth();
+
   const [canvasWidth, setCanvasWidth] = useState(360);
+  const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
+  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
+  const [progressReady, setProgressReady] = useState(false);
+  const [completedReady, setCompletedReady] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setPathProgress([]);
+      setCompletedLessonIds([]);
+      setProgressReady(false);
+      setCompletedReady(false);
+
+      return;
+    }
+
+    setProgressReady(false);
+    setCompletedReady(false);
+
+    // Keep lesson progress synchronized with Firestore
+    const unsubscribeProgress = subscribeToPathProgress(
+      user.uid,
+      THINKING_IN_CODE_PATH_ID,
+      (currentProgress) => {
+        setPathProgress(currentProgress);
+        setProgressReady(true);
+      },
+      () => {
+        setProgressReady(true);
+      },
+    );
+
+    // Keep completed lessons synchronized for unlock checks
+    const unsubscribeCompleted = subscribeToCompletedLessonIds(
+      user.uid,
+      (lessonIds) => {
+        setCompletedLessonIds(lessonIds);
+        setCompletedReady(true);
+      },
+      () => {
+        setCompletedReady(true);
+      },
+    );
+
+    return () => {
+      unsubscribeProgress();
+      unsubscribeCompleted();
+    };
+  }, [user]);
 
   const handleCanvasLayout = (event: LayoutChangeEvent) => {
     setCanvasWidth(event.nativeEvent.layout.width);
   };
 
+  const progressByLesson = useMemo(
+    () =>
+      new Map(
+        pathProgress.map((lessonProgress) => [
+          lessonProgress.lessonId,
+          lessonProgress,
+        ]),
+      ),
+    [pathProgress],
+  );
+
+  const allCompletedLessonIds = useMemo(() => {
+    const completedIds = new Set(completedLessonIds);
+
+    // Protect the UI if both Firestore listeners update at different times
+    pathProgress.forEach((lessonProgress) => {
+      if (lessonProgress.status === "completed") {
+        completedIds.add(lessonProgress.lessonId);
+      }
+    });
+
+    return Array.from(completedIds);
+  }, [completedLessonIds, pathProgress]);
+
+  const currentLesson = useMemo(
+    () => findCurrentLesson(progressByLesson, allCompletedLessonIds),
+    [progressByLesson, allCompletedLessonIds],
+  );
+
+  const pathProgressPercent = useMemo(() => {
+    const totalProgress = THINKING_IN_CODE_LESSONS.reduce((total, lesson) => {
+      if (allCompletedLessonIds.includes(lesson.id)) {
+        return total + 100;
+      }
+
+      return total + (progressByLesson.get(lesson.id)?.progressPercent ?? 0);
+    }, 0);
+
+    return Math.round(totalProgress / THINKING_IN_CODE_LESSONS.length);
+  }, [progressByLesson, allCompletedLessonIds]);
+
   const leftX = canvasWidth * 0.32;
   const rightX = canvasWidth * 0.72;
 
-  const lessons = {
-    lesson1: {
-      x: leftX,
-      y: 70,
-    },
-    lesson2: {
-      x: rightX,
-      y: 196,
-    },
-    lesson3: {
-      x: leftX,
-      y: 326,
-    },
-    lesson4: {
-      x: rightX,
-      y: 456,
-    },
-    lesson5: {
-      x: leftX,
-      y: 586,
-    },
-    lesson6: {
-      x: rightX,
-      y: 716,
-    },
+  // Lesson positions are generated from the lesson catalog
+  const lessonCenters = useMemo(
+    () =>
+      THINKING_IN_CODE_LESSONS.map((_, index) => ({
+        x: index % 2 === 0 ? leftX : rightX,
+        y: 70 + index * 130,
+      })),
+    [leftX, rightX],
+  );
+
+  const pathCanvasHeight = Math.max(
+    790,
+    140 + THINKING_IN_CODE_LESSONS.length * 130,
+  );
+
+  const dataReady = progressReady && completedReady;
+  const totalXp = profile?.xp ?? 0;
+
+  const openLesson = (lessonId: string) => {
+    router.push(`/skill-card/${lessonId}` as never);
+  };
+
+  const getLessonState = (lesson: LessonDefinition): LessonNodeState => {
+    if (allCompletedLessonIds.includes(lesson.id)) {
+      return "completed";
+    }
+
+    const unlocked = isLessonUnlocked(
+      lesson.id,
+      THINKING_IN_CODE_LESSON_ORDER,
+      allCompletedLessonIds,
+    );
+
+    return unlocked ? "active" : "locked";
+  };
+
+  const getLessonStatus = (
+    lesson: LessonDefinition,
+    state: LessonNodeState,
+  ) => {
+    if (state === "completed") {
+      return "Completed";
+    }
+
+    if (state === "locked") {
+      return "Locked";
+    }
+
+    const lessonProgress = progressByLesson.get(lesson.id);
+
+    if (
+      lessonProgress?.status === "in-progress" &&
+      lessonProgress.progressPercent > 0
+    ) {
+      return `${lessonProgress.progressPercent}% Complete`;
+    }
+
+    return "Start Lesson";
   };
 
   return (
@@ -329,25 +508,29 @@ export default function PathsScreen() {
         </View>
 
         <View style={styles.progressCard}>
-          <LevelBadge />
+          <LevelBadge level={currentLesson.number} />
 
           <View style={styles.progressContent}>
-            <Text style={styles.levelText}>Level 2</Text>
+            <Text style={styles.levelText}>Level {currentLesson.number}</Text>
 
-            <Text style={styles.pathTitle}>Sequencing Commands</Text>
+            <Text style={styles.pathTitle}>{currentLesson.title}</Text>
 
             <View style={styles.progressRow}>
               <View style={styles.progressTrack}>
-                <View style={styles.progressFill} />
+                <View
+                  style={[
+                    styles.progressFill,
+                    {
+                      width: `${pathProgressPercent}%` as `${number}%`,
+                    },
+                  ]}
+                />
               </View>
 
-              <Text style={styles.progressPercent}>35%</Text>
+              <Text style={styles.progressPercent}>{pathProgressPercent}%</Text>
             </View>
 
-            <Text style={styles.description}>
-              Master the basics of sequencing commands and discover how programs
-              follow instructions to solve problems.
-            </Text>
+            <Text style={styles.description}>{currentLesson.description}</Text>
           </View>
         </View>
       </View>
@@ -358,90 +541,59 @@ export default function PathsScreen() {
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-        <View style={styles.pathCanvas} onLayout={handleCanvasLayout}>
-          <View style={styles.connectorLayer}>
-            <ConnectorLine
-              start={lessons.lesson1}
-              end={lessons.lesson2}
-              active
-            />
+        <View
+          style={[styles.pathCanvas, { height: pathCanvasHeight }]}
+          onLayout={handleCanvasLayout}
+        >
+          {!dataReady ? (
+            <View style={styles.loadingPath}>
+              <ActivityIndicator size="large" color={Colors.primary} />
 
-            <ConnectorLine start={lessons.lesson2} end={lessons.lesson3} />
+              <Text style={styles.loadingText}>Loading your learning path</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.connectorLayer}>
+                {THINKING_IN_CODE_LESSONS.slice(0, -1).map((lesson, index) => (
+                  <ConnectorLine
+                    key={`${lesson.id}-connector`}
+                    start={lessonCenters[index]}
+                    end={lessonCenters[index + 1]}
+                    active={allCompletedLessonIds.includes(lesson.id)}
+                  />
+                ))}
+              </View>
 
-            <ConnectorLine start={lessons.lesson3} end={lessons.lesson4} />
+              {THINKING_IN_CODE_LESSONS.map((lesson, index) => {
+                const lessonState = getLessonState(lesson);
+                const lessonStatus = getLessonStatus(lesson, lessonState);
 
-            <ConnectorLine start={lessons.lesson4} end={lessons.lesson5} />
-
-            <ConnectorLine start={lessons.lesson5} end={lessons.lesson6} />
-          </View>
-
-          <LessonNode
-            center={lessons.lesson1}
-            number={1}
-            title="Welcome to Code"
-            status="Completed"
-            state="completed"
-            labelSide="right"
-            onPress={() => router.push("/skill-card/welcome-to-code")}
-          />
-
-          <LessonNode
-            center={lessons.lesson2}
-            number={2}
-            title="Sequencing Commands"
-            status="In Progress"
-            state="active"
-            labelSide="left"
-            onPress={() => router.push("/skill-card/sequencing-commands")}
-          />
-
-          <LessonNode
-            center={lessons.lesson3}
-            number={3}
-            title="Actions & Output"
-            status="Locked"
-            state="locked"
-            labelSide="right"
-          />
-
-          <LessonNode
-            center={lessons.lesson4}
-            number={4}
-            title="Simple Algorithms"
-            status="Locked"
-            state="locked"
-            labelSide="left"
-          />
-
-          <LessonNode
-            center={lessons.lesson5}
-            number={5}
-            title="Conditional Logic"
-            status="Locked"
-            state="locked"
-            labelSide="right"
-          />
-
-          <LessonNode
-            center={lessons.lesson6}
-            number={6}
-            title="Loops & Iteration"
-            status="Locked"
-            state="locked"
-            labelSide="left"
-          />
+                return (
+                  <LessonNode
+                    key={lesson.id}
+                    center={lessonCenters[index]}
+                    number={lesson.number}
+                    title={lesson.title}
+                    status={lessonStatus}
+                    state={lessonState}
+                    labelSide={index % 2 === 0 ? "right" : "left"}
+                    onPress={
+                      lessonState !== "locked"
+                        ? () => openLesson(lesson.id)
+                        : undefined
+                    }
+                  />
+                );
+              })}
+            </>
+          )}
         </View>
       </ScrollView>
 
       <View style={styles.bottomSection}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.scrollHint,
-            pressed && styles.pressed,
-          ]}
-        >
+        <View style={styles.scrollHint}>
           <Ionicons name="chevron-down" size={24} color={Colors.textPrimary} />
-        </Pressable>
+        </View>
 
         <View style={styles.rewardBar}>
           <View style={styles.rewardSide}>
@@ -454,24 +606,30 @@ export default function PathsScreen() {
                 color={Colors.success}
               />
 
-              <Text style={styles.rewardValue}>140</Text>
+              <Text style={styles.rewardValue}>{totalXp}</Text>
             </View>
           </View>
 
           <Pressable
-            onPress={() => router.push("/skill-card/sequencing-commands")}
+            disabled={!dataReady}
+            onPress={() => openLesson(currentLesson.id)}
             style={({ pressed }) => [
               styles.continueButton,
+              !dataReady && styles.disabledButton,
               pressed && styles.pressed,
             ]}
           >
             <Ionicons name="play" size={22} color={Colors.textPrimary} />
 
-            <Text style={styles.continueText}>Continue</Text>
+            <Text style={styles.continueText}>
+              {allCompletedLessonIds.length === THINKING_IN_CODE_LESSONS.length
+                ? "Review"
+                : "Continue"}
+            </Text>
           </Pressable>
 
           <View style={[styles.rewardSide, styles.rewardSideRight]}>
-            <Text style={styles.rewardLabel}>Next Reward</Text>
+            <Text style={styles.rewardLabel}>Lesson Reward</Text>
 
             <View style={styles.rewardValueRow}>
               <MaterialCommunityIcons
@@ -480,7 +638,9 @@ export default function PathsScreen() {
                 color={Colors.warning}
               />
 
-              <Text style={styles.rewardValue}>200 XP</Text>
+              <Text style={styles.rewardValue}>
+                +{currentLesson.xpReward} XP
+              </Text>
             </View>
           </View>
         </View>
@@ -591,7 +751,6 @@ const styles = StyleSheet.create({
   },
 
   progressFill: {
-    width: "35%",
     height: "100%",
     borderRadius: 8,
     backgroundColor: Colors.primary,
@@ -624,7 +783,19 @@ const styles = StyleSheet.create({
 
   pathCanvas: {
     position: "relative",
-    height: 790,
+    minHeight: 790,
+  },
+
+  loadingPath: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+
+  loadingText: {
+    color: Colors.textMuted,
+    fontSize: 13,
   },
 
   connectorLayer: {
@@ -745,7 +916,7 @@ const styles = StyleSheet.create({
   },
 
   rewardSideRight: {
-    width: 88,
+    width: 98,
   },
 
   rewardLabel: {
@@ -774,6 +945,10 @@ const styles = StyleSheet.create({
     gap: 7,
     borderRadius: 9,
     backgroundColor: Colors.primaryDark,
+  },
+
+  disabledButton: {
+    opacity: 0.5,
   },
 
   continueText: {

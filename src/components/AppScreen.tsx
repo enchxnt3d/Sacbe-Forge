@@ -11,12 +11,15 @@ interface AppScreenProps {
   scrollable?: boolean;
 }
 
+const MAX_CONTENT_WIDTH = 1200;
+
 export default function AppScreen({
   children,
   scrollable = false,
 }: AppScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
+      {/* Keep the background covering the complete screen */}
       <LinearGradient
         colors={[
           "rgba(124, 58, 237, 0)",
@@ -34,10 +37,11 @@ export default function AppScreen({
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {children}
+          {/* Limit wide desktop screens without changing mobile */}
+          <View style={styles.scrollFrame}>{children}</View>
         </ScrollView>
       ) : (
-        <View style={styles.content}>{children}</View>
+        <View style={styles.contentFrame}>{children}</View>
       )}
     </SafeAreaView>
   );
@@ -48,6 +52,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+
   glow: {
     position: "absolute",
     left: 0,
@@ -55,14 +60,25 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 320,
   },
-  content: {
+
+  contentFrame: {
     flex: 1,
+    width: "100%",
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: "center",
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: 110,
   },
+
   scrollContent: {
     flexGrow: 1,
+  },
+
+  scrollFrame: {
+    width: "100%",
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: "center",
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: 110,

@@ -1,12 +1,23 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import AppCard from "../../components/AppCard";
 import AppScreen from "../../components/AppScreen";
 import ProgressBar from "../../components/ProgressBar";
 import { Colors } from "../../constants/colors";
+import {
+  getThinkingInCodeLesson,
+  THINKING_IN_CODE_LESSONS,
+  THINKING_IN_CODE_PATH_ID,
+  type LessonDefinition,
+} from "../../constants/lessons";
 import { Spacing } from "../../constants/spacing";
 import { Typography } from "../../constants/typography";
+import { useAuth } from "../../context/AuthContext";
+import { subscribeToPathProgress } from "../../services/progressService";
+import type { LessonProgress } from "../../types/progress";
 
 interface Course {
   id: number;
@@ -17,12 +28,13 @@ interface Course {
   color: string;
 }
 
-const courses: Course[] = [
+// Course cards currently available on Home
+const baseCourses: Course[] = [
   {
     id: 1,
     title: "Thinking in Code",
-    level: 2,
-    progress: 35,
+    level: 1,
+    progress: 0,
     icon: "terminal",
     color: Colors.primary,
   },
@@ -68,16 +80,146 @@ const courses: Course[] = [
   },
 ];
 
+function findResumeLesson(progress: LessonProgress[]): LessonDefinition {
+  const firstLesson = THINKING_IN_CODE_LESSONS[0]!;
+
+  // Prefer the most recently updated unfinished lesson
+  const latestInProgress = progress
+    .filter((lessonProgress) => {
+      return lessonProgress.status === "in-progress";
+    })
+    .sort((firstProgress, secondProgress) => {
+      const firstTime = firstProgress.updatedAt?.toMillis() ?? 0;
+
+      const secondTime = secondProgress.updatedAt?.toMillis() ?? 0;
+
+      return secondTime - firstTime;
+    })[0];
+
+  if (latestInProgress) {
+    const matchingLesson = getThinkingInCodeLesson(latestInProgress.lessonId);
+
+    if (matchingLesson) {
+      return matchingLesson;
+    }
+  }
+
+  // Move to the first lesson that is not completed
+  const completedLessonIds = new Set(
+    progress
+      .filter((lessonProgress) => {
+        return lessonProgress.status === "completed";
+      })
+      .map((lessonProgress) => lessonProgress.lessonId),
+  );
+
+  const nextLesson = THINKING_IN_CODE_LESSONS.find(
+    (lesson) => !completedLessonIds.has(lesson.id),
+  );
+
+  if (nextLesson) {
+    return nextLesson;
+  }
+
+  // Keep the final lesson available after the path is finished
+  return THINKING_IN_CODE_LESSONS.at(-1) ?? firstLesson;
+}
+
 export default function HomeScreen() {
+  const router = useRouter();
+  const { user, profile } = useAuth();
+
+  const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
+
+  useEffect(() => {
+    if (!user) {
+      setPathProgress([]);
+      return;
+    }
+
+    // Keep Home synchronized with this user progress
+    return subscribeToPathProgress(
+      user.uid,
+      THINKING_IN_CODE_PATH_ID,
+      setPathProgress,
+      (error) => {
+        console.error("Home progress listener error:", error);
+      },
+    );
+  }, [user]);
+
+  // Find the lesson the user should continue
+  const currentLesson = useMemo(
+    () => findResumeLesson(pathProgress),
+    [pathProgress],
+  );
+
+  // Calculate progress across the complete learning path
+  const pathProgressPercent = useMemo(() => {
+    const totalProgress = THINKING_IN_CODE_LESSONS.reduce((total, lesson) => {
+      const lessonProgress = pathProgress.find(
+        (progress) => progress.lessonId === lesson.id,
+      );
+
+      return total + (lessonProgress?.progressPercent ?? 0);
+    }, 0);
+
+    return Math.round(totalProgress / THINKING_IN_CODE_LESSONS.length);
+  }, [pathProgress]);
+
+  const currentStreak = profile?.currentStreak ?? 0;
+  const totalXp = profile?.xp ?? 0;
+
+  // Use the first 20 XP as the current visible goal
+  const xpGoal = 20;
+  const xpTowardGoal = Math.min(totalXp, xpGoal);
+
+  const xpGoalPercent = Math.min(
+    100,
+    Math.round((xpTowardGoal / xpGoal) * 100),
+  );
+
+  // Connect the first course card to real Firestore values
+  const courses = useMemo(
+    () =>
+      baseCourses.map((course) => {
+        if (course.id !== 1) {
+          return course;
+        }
+
+        return {
+          ...course,
+          level: currentLesson.number,
+          progress: pathProgressPercent,
+        };
+      }),
+    [currentLesson.number, pathProgressPercent],
+  );
+
+  function openCurrentLesson() {
+    router.push(`/skill-card/${currentLesson.id}` as never);
+  }
+
+  function openCourse(course: Course) {
+    if (course.id === 1) {
+      router.push("/paths" as never);
+      return;
+    }
+
+    alert(`${course.title} is coming soon`);
+  }
+
   return (
     <AppScreen>
       <View style={styles.screenContent}>
+        {/* User streak and app title */}
         <View style={styles.header}>
           <View style={styles.streakContainer}>
             <Ionicons name="flame" size={30} color={Colors.orange} />
 
             <View>
-              <Text style={styles.streakNumber}>2</Text>
+              <Text style={styles.streakNumber}>{currentStreak}</Text>
+
               <Text style={styles.streakLabel}>Day streak</Text>
             </View>
           </View>
@@ -85,6 +227,7 @@ export default function HomeScreen() {
           <Text style={styles.appTitle}>SkillForge</Text>
         </View>
 
+        {/* Current lesson loaded from Firestore */}
         <AppCard>
           <View style={styles.continueCard}>
             <View style={styles.continueTopRow}>
@@ -94,7 +237,7 @@ export default function HomeScreen() {
                 <Text style={styles.courseTitle}>Thinking in Code</Text>
 
                 <Text style={styles.levelText}>
-                  Level 2 - Sequencing Commands
+                  Level {currentLesson.number} - {currentLesson.title}
                 </Text>
               </View>
 
@@ -130,9 +273,11 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.progressArea}>
-              <ProgressBar progress={35} />
+              <ProgressBar progress={pathProgressPercent} />
 
-              <Text style={styles.progressText}>35% complete</Text>
+              <Text style={styles.progressText}>
+                {pathProgressPercent}% complete
+              </Text>
             </View>
 
             <Pressable
@@ -140,7 +285,7 @@ export default function HomeScreen() {
                 styles.continueButton,
                 pressed && styles.buttonPressed,
               ]}
-              onPress={() => alert("Continue lesson")}
+              onPress={openCurrentLesson}
             >
               <Text style={styles.continueButtonText}>Continue Lesson</Text>
 
@@ -153,6 +298,7 @@ export default function HomeScreen() {
           </View>
         </AppCard>
 
+        {/* XP loaded from the active Firestore profile */}
         <AppCard>
           <View style={styles.goalCard}>
             <MaterialCommunityIcons
@@ -162,16 +308,18 @@ export default function HomeScreen() {
             />
 
             <View style={styles.goalInformation}>
-              <Text style={styles.goalTitle}>Today&apos;s Goal</Text>
+              <Text style={styles.goalTitle}>XP Goal</Text>
 
-              <Text style={styles.goalSubtitle}>Earn 20 XP</Text>
+              <Text style={styles.goalSubtitle}>Earn {xpGoal} XP</Text>
 
               <View style={styles.goalProgressRow}>
                 <View style={styles.goalProgressBar}>
-                  <ProgressBar progress={70} />
+                  <ProgressBar progress={xpGoalPercent} />
                 </View>
 
-                <Text style={styles.goalProgressText}>14 / 20 XP</Text>
+                <Text style={styles.goalProgressText}>
+                  {xpTowardGoal} / {xpGoal} XP
+                </Text>
               </View>
             </View>
 
@@ -179,6 +327,7 @@ export default function HomeScreen() {
           </View>
         </AppCard>
 
+        {/* Course collection */}
         <View style={styles.coursesSection}>
           <View style={styles.coursesHeader}>
             <Text style={styles.coursesTitle}>Courses</Text>
@@ -203,7 +352,7 @@ export default function HomeScreen() {
                     styles.courseCard,
                     pressed && styles.courseCardPressed,
                   ]}
-                  onPress={() => alert(course.title)}
+                  onPress={() => openCourse(course)}
                 >
                   <View
                     style={[
