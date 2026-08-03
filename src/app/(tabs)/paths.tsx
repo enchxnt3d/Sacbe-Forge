@@ -1,6 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,8 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../../constants/colors";
 import {
-  THINKING_IN_CODE_LESSON_ORDER,
-  THINKING_IN_CODE_LESSONS,
+  getLearningPath,
+  getLessonOrder,
   THINKING_IN_CODE_PATH_ID,
   type LessonDefinition,
 } from "../../constants/lessons";
@@ -276,33 +276,34 @@ function LessonNode({
 }
 
 function findCurrentLesson(
+  lessons: LessonDefinition[],
   progressByLesson: Map<string, LessonProgress>,
   completedLessonIds: string[],
 ): LessonDefinition {
-  // Continue the most recently updated unfinished lesson
-  const inProgressLessons = THINKING_IN_CODE_LESSONS.filter((lesson) => {
-    const progress = progressByLesson.get(lesson.id);
+  const inProgressLessons = lessons
+    .filter((lesson) => {
+      const progress = progressByLesson.get(lesson.id);
 
-    return (
-      progress?.status === "in-progress" &&
-      !completedLessonIds.includes(lesson.id)
-    );
-  }).sort((firstLesson, secondLesson) => {
-    const firstUpdatedAt =
-      progressByLesson.get(firstLesson.id)?.updatedAt?.toMillis() ?? 0;
+      return (
+        progress?.status === "in-progress" &&
+        !completedLessonIds.includes(lesson.id)
+      );
+    })
+    .sort((firstLesson, secondLesson) => {
+      const firstUpdatedAt =
+        progressByLesson.get(firstLesson.id)?.updatedAt?.toMillis() ?? 0;
 
-    const secondUpdatedAt =
-      progressByLesson.get(secondLesson.id)?.updatedAt?.toMillis() ?? 0;
+      const secondUpdatedAt =
+        progressByLesson.get(secondLesson.id)?.updatedAt?.toMillis() ?? 0;
 
-    return secondUpdatedAt - firstUpdatedAt;
-  });
+      return secondUpdatedAt - firstUpdatedAt;
+    });
 
   if (inProgressLessons.length > 0) {
     return inProgressLessons[0];
   }
 
-  // New users and finished lessons continue with the first incomplete lesson
-  const firstIncompleteLesson = THINKING_IN_CODE_LESSONS.find(
+  const firstIncompleteLesson = lessons.find(
     (lesson) => !completedLessonIds.includes(lesson.id),
   );
 
@@ -310,13 +311,28 @@ function findCurrentLesson(
     return firstIncompleteLesson;
   }
 
-  // Keep the last lesson available when the path is fully completed
-  return THINKING_IN_CODE_LESSONS[THINKING_IN_CODE_LESSONS.length - 1];
+  return lessons[lessons.length - 1];
 }
 
 export default function PathsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { user, profile } = useAuth();
+
+  const pathIdParameter = params.pathId;
+
+  const selectedPathId = Array.isArray(pathIdParameter)
+    ? pathIdParameter[0]
+    : pathIdParameter;
+
+  const activePathId =
+    selectedPathId ?? profile?.selectedPathId ?? THINKING_IN_CODE_PATH_ID;
+
+  const learningPath =
+    getLearningPath(activePathId) ?? getLearningPath(THINKING_IN_CODE_PATH_ID)!;
+
+  const lessons = learningPath.lessons;
+  const lessonOrder = getLessonOrder(learningPath.id);
 
   const [canvasWidth, setCanvasWidth] = useState(360);
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
@@ -340,7 +356,7 @@ export default function PathsScreen() {
     // Keep lesson progress synchronized with Firestore
     const unsubscribeProgress = subscribeToPathProgress(
       user.uid,
-      THINKING_IN_CODE_PATH_ID,
+      learningPath.id,
       (currentProgress) => {
         setPathProgress(currentProgress);
         setProgressReady(true);
@@ -366,7 +382,7 @@ export default function PathsScreen() {
       unsubscribeProgress();
       unsubscribeCompleted();
     };
-  }, [user]);
+  }, [user, learningPath.id]);
 
   const handleCanvasLayout = (event: LayoutChangeEvent) => {
     setCanvasWidth(event.nativeEvent.layout.width);
@@ -397,12 +413,12 @@ export default function PathsScreen() {
   }, [completedLessonIds, pathProgress]);
 
   const currentLesson = useMemo(
-    () => findCurrentLesson(progressByLesson, allCompletedLessonIds),
-    [progressByLesson, allCompletedLessonIds],
+    () => findCurrentLesson(lessons, progressByLesson, allCompletedLessonIds),
+    [lessons, progressByLesson, allCompletedLessonIds],
   );
 
   const pathProgressPercent = useMemo(() => {
-    const totalProgress = THINKING_IN_CODE_LESSONS.reduce((total, lesson) => {
+    const totalProgress = lessons.reduce((total, lesson) => {
       if (allCompletedLessonIds.includes(lesson.id)) {
         return total + 100;
       }
@@ -410,8 +426,10 @@ export default function PathsScreen() {
       return total + (progressByLesson.get(lesson.id)?.progressPercent ?? 0);
     }, 0);
 
-    return Math.round(totalProgress / THINKING_IN_CODE_LESSONS.length);
-  }, [progressByLesson, allCompletedLessonIds]);
+    return lessons.length === 0
+      ? 0
+      : Math.round(totalProgress / lessons.length);
+  }, [lessons, progressByLesson, allCompletedLessonIds]);
 
   const leftX = canvasWidth * 0.32;
   const rightX = canvasWidth * 0.72;
@@ -419,17 +437,14 @@ export default function PathsScreen() {
   // Lesson positions are generated from the lesson catalog
   const lessonCenters = useMemo(
     () =>
-      THINKING_IN_CODE_LESSONS.map((_, index) => ({
+      lessons.map((_, index) => ({
         x: index % 2 === 0 ? leftX : rightX,
         y: 70 + index * 130,
       })),
-    [leftX, rightX],
+    [lessons, leftX, rightX],
   );
 
-  const pathCanvasHeight = Math.max(
-    790,
-    140 + THINKING_IN_CODE_LESSONS.length * 130,
-  );
+  const pathCanvasHeight = Math.max(790, 140 + lessons.length * 130);
 
   const dataReady = progressReady && completedReady;
   const totalXp = profile?.xp ?? 0;
@@ -445,7 +460,7 @@ export default function PathsScreen() {
 
     const unlocked = isLessonUnlocked(
       lesson.id,
-      THINKING_IN_CODE_LESSON_ORDER,
+      lessonOrder,
       allCompletedLessonIds,
     );
 
@@ -502,7 +517,7 @@ export default function PathsScreen() {
             <Ionicons name="arrow-back" size={34} color={Colors.textPrimary} />
           </Pressable>
 
-          <Text style={styles.screenTitle}>Thinking in Code</Text>
+          <Text style={styles.screenTitle}>{learningPath.title}</Text>
 
           <View style={styles.titleSpacer} />
         </View>
@@ -554,7 +569,7 @@ export default function PathsScreen() {
           ) : (
             <>
               <View style={styles.connectorLayer}>
-                {THINKING_IN_CODE_LESSONS.slice(0, -1).map((lesson, index) => (
+                {lessons.slice(0, -1).map((lesson, index) => (
                   <ConnectorLine
                     key={`${lesson.id}-connector`}
                     start={lessonCenters[index]}
@@ -564,7 +579,7 @@ export default function PathsScreen() {
                 ))}
               </View>
 
-              {THINKING_IN_CODE_LESSONS.map((lesson, index) => {
+              {lessons.map((lesson, index) => {
                 const lessonState = getLessonState(lesson);
                 const lessonStatus = getLessonStatus(lesson, lessonState);
 
@@ -622,7 +637,9 @@ export default function PathsScreen() {
             <Ionicons name="play" size={22} color={Colors.textPrimary} />
 
             <Text style={styles.continueText}>
-              {allCompletedLessonIds.length === THINKING_IN_CODE_LESSONS.length
+              {lessons.every((lesson) =>
+                allCompletedLessonIds.includes(lesson.id),
+              )
                 ? "Review"
                 : "Continue"}
             </Text>
