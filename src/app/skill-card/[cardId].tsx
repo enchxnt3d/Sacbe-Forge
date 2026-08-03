@@ -18,6 +18,7 @@ import {
   THINKING_IN_CODE_LESSON_ORDER,
   THINKING_IN_CODE_PATH_ID,
 } from "../../constants/lessons";
+import { getLessonContent } from "../../content/lessonContent";
 import { useAuth } from "../../context/AuthContext";
 import {
   deleteUserNote,
@@ -49,6 +50,9 @@ export default function SkillCardScreen() {
 
   const lesson = lessonId ? getThinkingInCodeLesson(lessonId) : undefined;
 
+  // Load the editable material for this lesson
+  const lessonContent = lesson ? getLessonContent(lesson.id) : null;
+
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
 
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
@@ -65,6 +69,7 @@ export default function SkillCardScreen() {
       setPathProgress([]);
       setCompletedLessonIds([]);
       setDataReady(true);
+
       return;
     }
 
@@ -111,6 +116,7 @@ export default function SkillCardScreen() {
   useEffect(() => {
     if (!user || !lesson) {
       setNotes([]);
+
       return;
     }
 
@@ -323,6 +329,7 @@ export default function SkillCardScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.topRow}>
           <Pressable
@@ -353,6 +360,169 @@ export default function SkillCardScreen() {
             <Text style={styles.description}>{lesson.description}</Text>
           </View>
         </View>
+
+        {lessonContent ? (
+          <>
+            <View style={styles.overviewCard}>
+              <View style={styles.overviewTopRow}>
+                <View style={styles.overviewMeta}>
+                  <Ionicons
+                    name="time-outline"
+                    size={20}
+                    color={Colors.primary}
+                  />
+
+                  <Text style={styles.overviewMetaText}>
+                    About {lessonContent.estimatedMinutes} minutes
+                  </Text>
+                </View>
+
+                <View style={styles.overviewMeta}>
+                  <Ionicons
+                    name="trophy-outline"
+                    size={20}
+                    color={Colors.warning}
+                  />
+
+                  <Text style={styles.overviewMetaText}>
+                    {lesson.xpReward} XP
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.objectivesTitle}>Learning objectives</Text>
+
+              {lessonContent.objectives.map((objective, index) => (
+                <View
+                  key={`${lesson.id}-objective-${index}`}
+                  style={styles.objectiveRow}
+                >
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={19}
+                    color={Colors.success}
+                    style={styles.objectiveIcon}
+                  />
+
+                  <Text style={styles.objectiveText}>{objective}</Text>
+                </View>
+              ))}
+            </View>
+
+            {lessonContent.sections.map((section) => (
+              <View key={section.id} style={styles.contentSection}>
+                <Text style={styles.contentSectionTitle}>{section.title}</Text>
+
+                {section.paragraphs.map((paragraph, index) => (
+                  <Text
+                    key={`${section.id}-paragraph-${index}`}
+                    style={styles.paragraphText}
+                  >
+                    {paragraph}
+                  </Text>
+                ))}
+
+                {section.bulletPoints && section.bulletPoints.length > 0 ? (
+                  <View style={styles.bulletList}>
+                    {section.bulletPoints.map((bulletPoint, index) => (
+                      <View
+                        key={`${section.id}-bullet-${index}`}
+                        style={styles.bulletRow}
+                      >
+                        <View style={styles.bulletDot} />
+
+                        <Text style={styles.bulletText}>{bulletPoint}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {section.codeExample ? (
+                  <View style={styles.codeCard}>
+                    <View style={styles.codeHeader}>
+                      <Ionicons
+                        name="code-slash"
+                        size={18}
+                        color={Colors.primary}
+                      />
+
+                      <Text style={styles.codeLanguage}>
+                        {section.codeExample.language}
+                      </Text>
+                    </View>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      <Text selectable style={styles.codeText}>
+                        {section.codeExample.code}
+                      </Text>
+                    </ScrollView>
+                  </View>
+                ) : null}
+
+                {section.tip ? (
+                  <View style={styles.tipCard}>
+                    <Ionicons
+                      name="bulb-outline"
+                      size={22}
+                      color={Colors.warning}
+                    />
+
+                    <Text style={styles.tipText}>{section.tip}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+
+            {lessonContent.practiceActivity ? (
+              <View style={styles.practiceCard}>
+                <View style={styles.practiceHeader}>
+                  <Ionicons
+                    name="flask-outline"
+                    size={23}
+                    color={Colors.primary}
+                  />
+
+                  <Text style={styles.practiceTitle}>
+                    {lessonContent.practiceActivity.title}
+                  </Text>
+                </View>
+
+                <Text style={styles.practiceInstructions}>
+                  {lessonContent.practiceActivity.instructions}
+                </Text>
+
+                {lessonContent.practiceActivity.expectedResult ? (
+                  <View style={styles.expectedCard}>
+                    <Text style={styles.expectedLabel}>Expected result</Text>
+
+                    <Text style={styles.expectedText}>
+                      {lessonContent.practiceActivity.expectedResult}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View style={styles.contentUnavailableCard}>
+            <Ionicons
+              name="construct-outline"
+              size={35}
+              color={Colors.textMuted}
+            />
+
+            <Text style={styles.contentUnavailableTitle}>
+              Lesson material coming soon
+            </Text>
+
+            <Text style={styles.contentUnavailableText}>
+              The progress system is ready for this lesson
+            </Text>
+          </View>
+        )}
 
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
@@ -500,6 +670,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+
   centeredScreen: {
     flex: 1,
     alignItems: "center",
@@ -507,6 +678,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     padding: 24,
   },
+
   content: {
     width: "100%",
     maxWidth: 900,
@@ -514,28 +686,33 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 80,
   },
+
   loadingText: {
     color: Colors.textMuted,
     fontSize: 15,
     marginTop: 14,
   },
+
   topRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 22,
   },
+
   backButton: {
     width: 44,
     height: 44,
     alignItems: "flex-start",
     justifyContent: "center",
   },
+
   pathName: {
     flex: 1,
     color: Colors.textPrimary,
     fontSize: 18,
     fontWeight: "600",
   },
+
   xpBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -547,11 +724,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+
   xpText: {
     color: Colors.textPrimary,
     fontSize: 13,
     fontWeight: "600",
   },
+
   lessonCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -562,6 +741,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 18,
   },
+
   lessonNumber: {
     width: 58,
     height: 58,
@@ -571,25 +751,259 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     marginRight: 16,
   },
+
   lessonNumberText: {
     color: Colors.textPrimary,
     fontSize: 24,
     fontWeight: "700",
   },
+
   lessonHeading: {
     flex: 1,
   },
+
   title: {
     color: Colors.textPrimary,
     fontSize: 26,
     fontWeight: "700",
   },
+
   description: {
     color: Colors.textMuted,
     fontSize: 15,
     lineHeight: 22,
     marginTop: 6,
   },
+
+  overviewCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 18,
+  },
+
+  overviewTopRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 20,
+  },
+
+  overviewMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
+  overviewMetaText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+  },
+
+  objectivesTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+
+  objectiveRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 9,
+  },
+
+  objectiveIcon: {
+    marginTop: 1,
+    marginRight: 9,
+  },
+
+  objectiveText: {
+    flex: 1,
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  contentSection: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 18,
+  },
+
+  contentSectionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 21,
+    fontWeight: "700",
+    marginBottom: 13,
+  },
+
+  paragraphText: {
+    color: Colors.textMuted,
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 10,
+  },
+
+  bulletList: {
+    marginTop: 4,
+    marginBottom: 10,
+  },
+
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 8,
+  },
+
+  bulletDot: {
+    width: 7,
+    height: 7,
+    backgroundColor: Colors.primary,
+    borderRadius: 4,
+    marginTop: 7,
+    marginRight: 11,
+  },
+
+  bulletText: {
+    flex: 1,
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+
+  codeCard: {
+    overflow: "hidden",
+    backgroundColor: "#09090B",
+    borderWidth: 1,
+    borderColor: "#3F3F46",
+    borderRadius: 13,
+    marginTop: 14,
+  },
+
+  codeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: "#27272A",
+    borderBottomWidth: 1,
+    borderBottomColor: "#3F3F46",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+
+  codeLanguage: {
+    color: "#D4D4D8",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  codeText: {
+    color: "#C4B5FD",
+    fontSize: 14,
+    lineHeight: 21,
+    fontFamily: "monospace",
+    padding: 16,
+  },
+
+  tipCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    backgroundColor: "#422006",
+    borderWidth: 1,
+    borderColor: "#854D0E",
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 14,
+  },
+
+  tipText: {
+    flex: 1,
+    color: "#FDE68A",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  practiceCard: {
+    backgroundColor: "#2E1065",
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 18,
+  },
+
+  practiceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginBottom: 13,
+  },
+
+  practiceTitle: {
+    color: Colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "700",
+  },
+
+  practiceInstructions: {
+    color: "#DDD6FE",
+    fontSize: 15,
+    lineHeight: 23,
+  },
+
+  expectedCard: {
+    backgroundColor: "rgba(9, 9, 11, 0.5)",
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+  },
+
+  expectedLabel: {
+    color: "#C4B5FD",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+
+  expectedText: {
+    color: "#EDE9FE",
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 5,
+  },
+
+  contentUnavailableCard: {
+    alignItems: "center",
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 22,
+    padding: 30,
+    marginBottom: 18,
+  },
+
+  contentUnavailableTitle: {
+    color: Colors.textPrimary,
+    fontSize: 19,
+    fontWeight: "700",
+    marginTop: 12,
+  },
+
+  contentUnavailableText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 6,
+  },
+
   progressCard: {
     backgroundColor: Colors.surface,
     borderWidth: 2,
@@ -598,21 +1012,25 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 18,
   },
+
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+
   sectionTitle: {
     color: Colors.textPrimary,
     fontSize: 19,
     fontWeight: "700",
   },
+
   progressPercent: {
     color: Colors.primary,
     fontSize: 16,
     fontWeight: "700",
   },
+
   progressTrack: {
     height: 10,
     overflow: "hidden",
@@ -620,23 +1038,27 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 16,
   },
+
   progressFill: {
     height: "100%",
     backgroundColor: Colors.primary,
     borderRadius: 10,
   },
+
   rewardText: {
     color: Colors.warning,
     fontSize: 14,
     fontWeight: "600",
     marginTop: 12,
   },
+
   buttonRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
     marginTop: 20,
   },
+
   secondaryAction: {
     flexGrow: 1,
     minWidth: 170,
@@ -647,11 +1069,13 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     borderRadius: 11,
   },
+
   secondaryActionText: {
     color: Colors.primary,
     fontSize: 15,
     fontWeight: "700",
   },
+
   primaryAction: {
     flexGrow: 1,
     minWidth: 190,
@@ -663,11 +1087,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primaryDark,
     borderRadius: 11,
   },
+
   primaryActionText: {
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "700",
   },
+
   successMessage: {
     backgroundColor: "#052E16",
     borderWidth: 1,
@@ -676,10 +1102,12 @@ const styles = StyleSheet.create({
     padding: 13,
     marginBottom: 18,
   },
+
   successText: {
     color: "#86EFAC",
     textAlign: "center",
   },
+
   errorMessage: {
     backgroundColor: "#450A0A",
     borderWidth: 1,
@@ -688,10 +1116,12 @@ const styles = StyleSheet.create({
     padding: 13,
     marginBottom: 18,
   },
+
   errorText: {
     color: "#FCA5A5",
     textAlign: "center",
   },
+
   notesCard: {
     backgroundColor: Colors.surface,
     borderWidth: 2,
@@ -699,6 +1129,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 20,
   },
+
   noteInput: {
     minHeight: 110,
     color: Colors.textPrimary,
@@ -710,6 +1141,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlignVertical: "top",
   },
+
   saveNoteButton: {
     minHeight: 46,
     flexDirection: "row",
@@ -720,19 +1152,23 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     marginTop: 12,
   },
+
   saveNoteText: {
     color: "#FFFFFF",
     fontWeight: "700",
   },
+
   notesList: {
     gap: 10,
     marginTop: 18,
   },
+
   noNotes: {
     color: Colors.textMuted,
     textAlign: "center",
     paddingVertical: 12,
   },
+
   noteItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -742,19 +1178,23 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 13,
   },
+
   noteContent: {
     flex: 1,
   },
+
   noteText: {
     color: Colors.textPrimary,
     fontSize: 14,
     lineHeight: 20,
   },
+
   noteDate: {
     color: Colors.textMuted,
     fontSize: 11,
     marginTop: 7,
   },
+
   deleteNoteButton: {
     width: 42,
     height: 42,
@@ -762,12 +1202,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginLeft: 10,
   },
+
   emptyTitle: {
     color: Colors.textPrimary,
     fontSize: 25,
     fontWeight: "700",
     marginTop: 16,
   },
+
   emptyText: {
     maxWidth: 420,
     color: Colors.textMuted,
@@ -777,6 +1219,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 22,
   },
+
   primaryButton: {
     minWidth: 180,
     alignItems: "center",
@@ -784,11 +1227,13 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     paddingVertical: 14,
   },
+
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
   },
+
   secondaryButton: {
     minWidth: 180,
     alignItems: "center",
@@ -798,11 +1243,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 20,
   },
+
   secondaryButtonText: {
     color: Colors.primary,
     fontSize: 16,
     fontWeight: "700",
   },
+
   buttonDisabled: {
     opacity: 0.45,
   },

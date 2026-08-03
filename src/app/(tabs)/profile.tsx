@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -12,7 +12,12 @@ import {
 
 import { THINKING_IN_CODE_PATH_ID } from "../../constants/lessons";
 import { useAuth } from "../../context/AuthContext";
+import {
+  ACHIEVEMENTS,
+  subscribeToAchievements,
+} from "../../services/achievementService";
 import { logoutUser } from "../../services/authService";
+import type { UserAchievement } from "../../types/progress";
 
 // Add future learning paths here
 const PATH_DISPLAY_NAMES: Record<string, string> = {
@@ -37,12 +42,62 @@ function getPathDisplayName(pathId: string | null | undefined): string {
     .join(" ");
 }
 
+function getAchievementIcon(
+  achievementId: string,
+): "rocket-outline" | "trophy-outline" | "star-outline" | "flame-outline" {
+  switch (achievementId) {
+    case "first-lesson":
+      return "rocket-outline";
+
+    case "five-lessons":
+      return "trophy-outline";
+
+    case "xp-100":
+      return "star-outline";
+
+    case "streak-3":
+      return "flame-outline";
+
+    default:
+      return "trophy-outline";
+  }
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, profile, authReady, profileReady } = useAuth();
 
+  const [achievements, setAchievements] = useState<UserAchievement[]>([]);
+
+  const [achievementsReady, setAchievementsReady] = useState(false);
+
   const [signingOut, setSigningOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!user) {
+      setAchievements([]);
+      setAchievementsReady(true);
+
+      return;
+    }
+
+    setAchievementsReady(false);
+
+    // Keep earned achievements synchronized with Firestore
+    return subscribeToAchievements(
+      user.uid,
+      (currentAchievements) => {
+        setAchievements(currentAchievements);
+        setAchievementsReady(true);
+      },
+      (error) => {
+        console.error("Profile achievements error:", error);
+        setErrorMessage("Unable to load achievements");
+        setAchievementsReady(true);
+      },
+    );
+  }, [user]);
 
   async function handleSignOut() {
     try {
@@ -103,6 +158,10 @@ export default function ProfileScreen() {
 
   const avatarLetter = displayName.trim().charAt(0).toUpperCase() || "L";
 
+  const earnedAchievementIds = new Set(
+    achievements.map((achievement) => achievement.achievementId),
+  );
+
   return (
     <ScrollView
       style={styles.container}
@@ -154,6 +213,94 @@ export default function ProfileScreen() {
           <Text style={styles.statLabel}>Lessons completed</Text>
         </View>
       </View>
+
+      <View style={styles.sectionHeadingRow}>
+        <Text style={styles.sectionTitle}>Achievements</Text>
+
+        <Text style={styles.achievementCount}>
+          {achievements.length} / {ACHIEVEMENTS.length}
+        </Text>
+      </View>
+
+      {!achievementsReady ? (
+        <View style={styles.achievementsLoading}>
+          <ActivityIndicator color="#8B5CF6" />
+
+          <Text style={styles.achievementsLoadingText}>
+            Loading achievements
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.achievementsGrid}>
+          {ACHIEVEMENTS.map((achievement) => {
+            const earnedAchievement = achievements.find(
+              (savedAchievement) =>
+                savedAchievement.achievementId === achievement.id,
+            );
+
+            const unlocked = earnedAchievementIds.has(achievement.id);
+
+            return (
+              <View
+                key={achievement.id}
+                style={[
+                  styles.achievementCard,
+                  unlocked && styles.achievementCardUnlocked,
+                ]}
+              >
+                <View style={styles.achievementTopRow}>
+                  <View
+                    style={[
+                      styles.achievementIcon,
+                      unlocked && styles.achievementIconUnlocked,
+                    ]}
+                  >
+                    <Ionicons
+                      name={getAchievementIcon(achievement.id)}
+                      size={27}
+                      color={unlocked ? "#FACC15" : "#71717A"}
+                    />
+                  </View>
+
+                  <Ionicons
+                    name={unlocked ? "checkmark-circle" : "lock-closed"}
+                    size={21}
+                    color={unlocked ? "#22C55E" : "#71717A"}
+                  />
+                </View>
+
+                <Text
+                  style={[
+                    styles.achievementTitle,
+                    !unlocked && styles.achievementTextLocked,
+                  ]}
+                >
+                  {achievement.title}
+                </Text>
+
+                <Text style={styles.achievementDescription}>
+                  {achievement.description}
+                </Text>
+
+                <Text
+                  style={[
+                    styles.achievementStatus,
+                    unlocked && styles.achievementStatusUnlocked,
+                  ]}
+                >
+                  {unlocked
+                    ? earnedAchievement?.unlockedAt
+                      ? `Earned ${earnedAchievement.unlockedAt
+                          .toDate()
+                          .toLocaleDateString()}`
+                      : "Achievement earned"
+                    : "Locked"}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       <Text style={styles.sectionTitle}>Learning Path</Text>
 
@@ -308,9 +455,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  sectionHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
   sectionTitle: {
     color: "#FFFFFF",
     fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 14,
+  },
+
+  achievementCount: {
+    color: "#A78BFA",
+    fontSize: 14,
     fontWeight: "700",
     marginBottom: 14,
   },
@@ -342,6 +502,93 @@ const styles = StyleSheet.create({
     color: "#A1A1AA",
     fontSize: 14,
     marginTop: 5,
+  },
+
+  achievementsLoading: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#18181B",
+    borderWidth: 1,
+    borderColor: "#3F3F46",
+    borderRadius: 16,
+    padding: 28,
+    marginBottom: 30,
+  },
+
+  achievementsLoadingText: {
+    color: "#A1A1AA",
+    fontSize: 14,
+    marginTop: 10,
+  },
+
+  achievementsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 14,
+    marginBottom: 30,
+  },
+
+  achievementCard: {
+    flexGrow: 1,
+    minWidth: 210,
+    backgroundColor: "#18181B",
+    borderWidth: 1,
+    borderColor: "#3F3F46",
+    borderRadius: 16,
+    padding: 18,
+  },
+
+  achievementCardUnlocked: {
+    backgroundColor: "#1E1B4B",
+    borderColor: "#7C3AED",
+  },
+
+  achievementTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+
+  achievementIcon: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#27272A",
+    borderRadius: 14,
+  },
+
+  achievementIconUnlocked: {
+    backgroundColor: "#422006",
+  },
+
+  achievementTitle: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  achievementTextLocked: {
+    color: "#A1A1AA",
+  },
+
+  achievementDescription: {
+    color: "#A1A1AA",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+
+  achievementStatus: {
+    color: "#71717A",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 14,
+  },
+
+  achievementStatusUnlocked: {
+    color: "#86EFAC",
   },
 
   pathCard: {
