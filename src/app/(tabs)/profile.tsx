@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -9,8 +10,32 @@ import {
   View,
 } from "react-native";
 
+import { THINKING_IN_CODE_PATH_ID } from "../../constants/lessons";
 import { useAuth } from "../../context/AuthContext";
 import { logoutUser } from "../../services/authService";
+
+// Add future learning paths here
+const PATH_DISPLAY_NAMES: Record<string, string> = {
+  [THINKING_IN_CODE_PATH_ID]: "Thinking in Code",
+};
+
+function getPathDisplayName(pathId: string | null | undefined): string {
+  if (!pathId) {
+    return "No path selected";
+  }
+
+  const savedPathName = PATH_DISPLAY_NAMES[pathId];
+
+  if (savedPathName) {
+    return savedPathName;
+  }
+
+  // Create a readable fallback for future path ids
+  return pathId
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -41,6 +66,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#8B5CF6" />
+
         <Text style={styles.loadingText}>Loading your profile</Text>
       </View>
     );
@@ -52,11 +78,14 @@ export default function ProfileScreen() {
         <Text style={styles.title}>No active session</Text>
 
         <Text style={styles.mutedText}>
-          Sign in to load your Firebase profile and progress
+          Sign in to load your profile and learning progress
         </Text>
 
         <Pressable
-          style={styles.primaryButton}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed && styles.buttonPressed,
+          ]}
           onPress={() => router.replace("/auth" as never)}
         >
           <Text style={styles.primaryButtonText}>Sign In</Text>
@@ -68,16 +97,21 @@ export default function ProfileScreen() {
   // Use Firestore data first and Firebase Auth as fallback
   const displayName = profile?.displayName ?? user.displayName ?? "Learner";
 
-  const email = profile?.email ?? user.email ?? "No email";
-  const selectedPath = profile?.selectedPathId ?? "Not selected";
+  const email = profile?.email ?? user.email ?? "No email available";
+
+  const selectedPath = getPathDisplayName(profile?.selectedPathId);
+
+  const avatarLetter = displayName.trim().charAt(0).toUpperCase() || "L";
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {displayName.charAt(0).toUpperCase()}
-          </Text>
+          <Text style={styles.avatarText}>{avatarLetter}</Text>
         </View>
 
         <View style={styles.headerText}>
@@ -96,16 +130,19 @@ export default function ProfileScreen() {
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{profile?.xp ?? 0}</Text>
+
           <Text style={styles.statLabel}>Total XP</Text>
         </View>
 
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{profile?.currentStreak ?? 0}</Text>
+
           <Text style={styles.statLabel}>Current streak</Text>
         </View>
 
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{profile?.longestStreak ?? 0}</Text>
+
           <Text style={styles.statLabel}>Longest streak</Text>
         </View>
 
@@ -113,26 +150,25 @@ export default function ProfileScreen() {
           <Text style={styles.statValue}>
             {profile?.completedLessonCount ?? 0}
           </Text>
+
           <Text style={styles.statLabel}>Lessons completed</Text>
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Account Details</Text>
+      <Text style={styles.sectionTitle}>Learning Path</Text>
 
-      <View style={styles.detailsCard}>
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Selected path</Text>
-          <Text style={styles.detailValue}>{selectedPath}</Text>
+      <View style={styles.pathCard}>
+        <View style={styles.pathIcon}>
+          <Ionicons name="map-outline" size={26} color="#A78BFA" />
         </View>
 
-        <View style={styles.divider} />
+        <View style={styles.pathInformation}>
+          <Text style={styles.pathLabel}>Selected path</Text>
 
-        <View style={styles.detailColumn}>
-          <Text style={styles.detailLabel}>Firebase User ID</Text>
-          <Text selectable style={styles.userId}>
-            {user.uid}
-          </Text>
+          <Text style={styles.pathName}>{selectedPath}</Text>
         </View>
+
+        <Ionicons name="checkmark-circle" size={25} color="#22C55E" />
       </View>
 
       {errorMessage ? (
@@ -153,7 +189,11 @@ export default function ProfileScreen() {
         {signingOut ? (
           <ActivityIndicator color="#F87171" />
         ) : (
-          <Text style={styles.signOutText}>Sign Out</Text>
+          <>
+            <Ionicons name="log-out-outline" size={21} color="#F87171" />
+
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </>
         )}
       </Pressable>
     </ScrollView>
@@ -165,6 +205,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#09090B",
   },
+
   content: {
     width: "100%",
     maxWidth: 1000,
@@ -172,6 +213,7 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 120,
   },
+
   centeredContainer: {
     flex: 1,
     alignItems: "center",
@@ -179,11 +221,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#09090B",
     padding: 24,
   },
+
   loadingText: {
     color: "#A1A1AA",
     fontSize: 16,
     marginTop: 14,
   },
+
   mutedText: {
     maxWidth: 420,
     color: "#A1A1AA",
@@ -193,8 +237,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 22,
   },
+
   header: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     backgroundColor: "#18181B",
     borderWidth: 1,
@@ -202,7 +248,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 22,
     marginBottom: 30,
+    rowGap: 14,
   },
+
   avatar: {
     width: 64,
     height: 64,
@@ -211,25 +259,31 @@ const styles = StyleSheet.create({
     backgroundColor: "#7C3AED",
     borderRadius: 32,
   },
+
   avatarText: {
     color: "#FFFFFF",
     fontSize: 28,
     fontWeight: "700",
   },
+
   headerText: {
     flex: 1,
+    minWidth: 180,
     marginLeft: 16,
   },
+
   title: {
     color: "#FFFFFF",
     fontSize: 27,
     fontWeight: "700",
   },
+
   email: {
     color: "#A1A1AA",
     fontSize: 15,
     marginTop: 4,
   },
+
   sessionBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -237,7 +291,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    marginLeft: 12,
   },
+
   sessionDot: {
     width: 8,
     height: 8,
@@ -245,23 +301,27 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginRight: 7,
   },
+
   sessionText: {
     color: "#86EFAC",
     fontSize: 13,
     fontWeight: "600",
   },
+
   sectionTitle: {
     color: "#FFFFFF",
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 14,
   },
+
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 14,
     marginBottom: 30,
   },
+
   statCard: {
     flexGrow: 1,
     minWidth: 170,
@@ -271,17 +331,22 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
   },
+
   statValue: {
     color: "#A78BFA",
     fontSize: 28,
     fontWeight: "700",
   },
+
   statLabel: {
     color: "#A1A1AA",
     fontSize: 14,
     marginTop: 5,
   },
-  detailsCard: {
+
+  pathCard: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#18181B",
     borderWidth: 1,
     borderColor: "#3F3F46",
@@ -289,37 +354,39 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 24,
   },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 20,
+
+  pathIcon: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2E1065",
+    borderRadius: 14,
   },
-  detailColumn: {
-    gap: 7,
+
+  pathInformation: {
+    flex: 1,
+    marginHorizontal: 15,
   },
-  detailLabel: {
+
+  pathLabel: {
     color: "#A1A1AA",
-    fontSize: 14,
-  },
-  detailValue: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#3F3F46",
-    marginVertical: 18,
-  },
-  userId: {
-    color: "#D4D4D8",
     fontSize: 13,
   },
+
+  pathName: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+
   errorText: {
     color: "#F87171",
     textAlign: "center",
     marginBottom: 14,
   },
+
   primaryButton: {
     minWidth: 180,
     alignItems: "center",
@@ -328,26 +395,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
+
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
   },
+
   signOutButton: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     borderWidth: 1,
     borderColor: "#7F1D1D",
     borderRadius: 12,
     paddingVertical: 14,
   },
+
   signOutText: {
     color: "#F87171",
     fontSize: 16,
     fontWeight: "700",
   },
+
   buttonPressed: {
     opacity: 0.8,
   },
+
   buttonDisabled: {
     opacity: 0.5,
   },

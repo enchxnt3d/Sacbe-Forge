@@ -1,18 +1,52 @@
 import { Stack } from "expo-router";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { AuthProvider } from "../context/AuthContext";
+import { AuthProvider, useAuth } from "../context/AuthContext";
 
-export default function RootLayout() {
+function ProtectedNavigator() {
+  const { user, authReady } = useAuth();
+
+  // Wait until Firebase checks the saved session
+  if (!authReady) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#8B5CF6" />
+      </View>
+    );
+  }
+
   return (
-    // Give every screen access to the Firebase user
-    <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* Only logged-out users can access authentication */}
+      <Stack.Protected guard={!user}>
         <Stack.Screen name="auth" />
+      </Stack.Protected>
+
+      {/* Every app screen requires an authenticated user */}
+      <Stack.Protected guard={Boolean(user)}>
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="learning/[pathId]" />
         <Stack.Screen name="skill-tree/[treeId]" />
         <Stack.Screen name="skill-card/[cardId]" />
-      </Stack>
+      </Stack.Protected>
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    // Give the complete app access to Firebase Auth
+    <AuthProvider>
+      <ProtectedNavigator />
     </AuthProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#09090B",
+  },
+});
