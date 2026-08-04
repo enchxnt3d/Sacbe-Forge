@@ -1,24 +1,30 @@
 # Sacbé Forge
 
-A mobile learning application built with React Native, Expo, and Firebase.
+Skill Forge is a gamified mobile learning application built with React Native, Expo, and Firebase. The app helps users build programming knowledge through structured learning paths, interactive lessons, quizzes, XP progression, achievements, and progress tracking inspired by platforms like Duolingo and Brilliant.
 
-Sacbé Forge helps users learn concepts through structured learning paths, interactive lessons, quizzes, and experience (XP) progression inspired by learning platforms such as Duolingo and Brilliant.
+This project was developed for CPRG 303 – Mobile Application Development at the Southern Alberta Institute of Technology (SAIT).
 
 ---
 
-## Features
+# Features
 
-- User registration and login using Firebase Authentication
-- Multiple programming learning paths
-- Interactive lessons and quizzes
-- XP and lesson progression
-- Persistent progress saved with Firebase Firestore
-- User profile with statistics
+- Firebase Email & Password Authentication
+- Secure user accounts
+- Six programming learning paths
+- Interactive lessons
+- Lesson quizzes
+- XP reward system
+- Sequential lesson unlocking
+- Achievement tracking
+- Daily streak tracking
+- Personal notes for lessons
+- User profile with learning statistics
+- Progress saved to Firebase Firestore
 - Modern mobile interface built with Expo Router
 
 ---
 
-## Tech Stack
+# Tech Stack
 
 - React Native
 - Expo
@@ -26,14 +32,11 @@ Sacbé Forge helps users learn concepts through structured learning paths, inter
 - Expo Router
 - Firebase Authentication
 - Firebase Firestore
-- Formik
-- Yup
+- AsyncStorage
 
 ---
 
-## Getting Started
-
-### Prerequisites
+# Prerequisites
 
 Install the following before running the project:
 
@@ -43,60 +46,55 @@ Install the following before running the project:
 
 ---
 
-## Installation
+# Installation
 
-### 1. Clone the repository
+## 1. Clone the repository
 
 ```bash
 git clone <repository-url>
 cd Sacbe-Forge-main
 ```
 
-### 2. Install dependencies
+## 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Create the environment file
+## 3. Create the environment file
 
-Create a file named
+Create a file named:
 
-```
+```text
 .env
 ```
 
-in the root directory.
+in the project root.
 
-Copy the contents of the provided
+Copy the contents of the provided **.env.txt** file into your new `.env` file.
 
-```
-.env.txt
-```
+The `.env` file contains the Firebase configuration required for authentication and Firestore.
 
-file into your new `.env` file. This file contains the Firebase configuration required for authentication and database connectivity.
+After creating it, your project should look similar to:
 
-Your project should now look similar to:
-
-```
+```text
 Sacbe-Forge-main
 │
 ├── .env
-├── .env.txt
-├── app
-├── assets
-├── src
 ├── package.json
+├── src
+├── assets
+├── app.json
 └── README.md
 ```
 
-### 4. Start the application
+## 4. Start the application
 
 ```bash
 npx expo start
 ```
 
-Open the application using:
+Run the application using:
 
 - Expo Go
 - Android Emulator
@@ -104,24 +102,44 @@ Open the application using:
 
 ---
 
-## Project Structure
+# Project Structure
 
-```
-app/
-    Application screens and routing
-
+```text
 src/
-    Components, services, context, constants, and utilities
+│
+├── app/
+│   Application screens and Expo Router navigation
+│
+├── components/
+│   Reusable UI components
+│
+├── config/
+│   Firebase configuration
+│
+├── constants/
+│   Lesson content, colors, achievements, and shared constants
+│
+├── context/
+│   Authentication and application context
+│
+├── services/
+│   Firestore and application services
+│
+├── types/
+│   Shared TypeScript types
+│
+└── utils/
+│   Utility functions
 
 assets/
-    Images and application assets
+    Images, fonts, and other static resources
 ```
 
 ---
 
-## Learning Paths
+# Learning Paths
 
-Current learning paths included in the application:
+The application currently includes six learning paths:
 
 - Thinking in Code
 - Variables & Data
@@ -130,23 +148,43 @@ Current learning paths included in the application:
 - Debugging
 - Security Basics
 
-Each learning path contains multiple lessons, quizzes, XP rewards, and progress tracking.
+Each learning path contains:
+
+- Interactive lessons
+- Knowledge checks
+- XP rewards
+- Progress tracking
+- Locked lesson progression
 
 ---
 
-## Firebase
+# Firebase
 
 This project uses Firebase for:
 
-- Authentication
+- User Authentication
 - Cloud Firestore
-- User progress storage
+- Secure user progress storage
+- Achievement and profile synchronization
 
-The Firebase configuration is loaded through environment variables stored inside the `.env` file.
+The Firebase configuration is loaded from the `.env` file.
 
 ---
 
-## Team
+# Notes for Instructors
+
+To run this application successfully:
+
+1. Install all dependencies using `npm install`.
+2. Create a `.env` file in the project root.
+3. Copy the contents of the provided `.env.txt` file into the `.env` file.
+4. Run the project using `npx expo start`.
+
+Without the `.env` file, Firebase Authentication and Firestore will not initialize correctly.
+
+---
+
+# Team
 
 Sacbé Forge
 
@@ -156,14 +194,14 @@ Sacbé Forge
 
 ---
 
-## Course
+# Course
 
-CPRG 303 — Mobile Application Development
+**CPRG 303 – Mobile Application Development**
 
 Southern Alberta Institute of Technology (SAIT)
 
 ---
 
-## License
+# License
 
-This project was developed for educational purposes as part of CPRG 303 at SAIT.
+This project was created for educational purposes as part of CPRG 303 at SAIT.
