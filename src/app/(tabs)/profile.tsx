@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -10,7 +10,8 @@ import {
   View,
 } from "react-native";
 
-import { THINKING_IN_CODE_PATH_ID } from "../../constants/lessons";
+import ProgressBar from "../../components/ProgressBar";
+import { getLearningPath } from "../../constants/lessons";
 import { useAuth } from "../../context/AuthContext";
 import {
   ACHIEVEMENTS,
@@ -19,23 +20,17 @@ import {
 import { logoutUser } from "../../services/authService";
 import type { UserAchievement } from "../../types/progress";
 
-// Add future learning paths here
-const PATH_DISPLAY_NAMES: Record<string, string> = {
-  [THINKING_IN_CODE_PATH_ID]: "Thinking in Code",
-};
-
 function getPathDisplayName(pathId: string | null | undefined): string {
   if (!pathId) {
     return "No path selected";
   }
 
-  const savedPathName = PATH_DISPLAY_NAMES[pathId];
+  const learningPath = getLearningPath(pathId);
 
-  if (savedPathName) {
-    return savedPathName;
+  if (learningPath) {
+    return learningPath.title;
   }
 
-  // Create a readable fallback for future path ids
   return pathId
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -158,6 +153,10 @@ export default function ProfileScreen() {
 
   const avatarLetter = displayName.trim().charAt(0).toUpperCase() || "L";
 
+  const totalXp = profile?.xp ?? 0;
+  const xpMilestone = 300;
+  const xpProgress = Math.min(100, Math.round((totalXp / xpMilestone) * 100));
+
   const earnedAchievementIds = new Set(
     achievements.map((achievement) => achievement.achievementId),
   );
@@ -184,32 +183,51 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      <View style={styles.xpCard}>
+        <View style={styles.xpHeader}>
+          <View style={styles.xpTitleRow}>
+            <MaterialCommunityIcons
+              name="star-four-points"
+              size={20}
+              color="#22C55E"
+            />
+            <Text style={styles.xpTitle}>XP Progress</Text>
+          </View>
+
+          <Text style={styles.xpAmount}>
+            {totalXp} / {xpMilestone} XP
+          </Text>
+        </View>
+
+        <ProgressBar progress={xpProgress} />
+      </View>
+
       <Text style={styles.sectionTitle}>Learning Progress</Text>
 
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{profile?.xp ?? 0}</Text>
-
+          <Ionicons name="sparkles" size={24} color="#FACC15" />
+          <Text style={styles.statValue}>{totalXp}</Text>
           <Text style={styles.statLabel}>Total XP</Text>
         </View>
 
         <View style={styles.statCard}>
+          <Ionicons name="flame" size={24} color="#F97316" />
           <Text style={styles.statValue}>{profile?.currentStreak ?? 0}</Text>
-
           <Text style={styles.statLabel}>Current streak</Text>
         </View>
 
         <View style={styles.statCard}>
+          <Ionicons name="flame-outline" size={24} color="#F97316" />
           <Text style={styles.statValue}>{profile?.longestStreak ?? 0}</Text>
-
           <Text style={styles.statLabel}>Longest streak</Text>
         </View>
 
         <View style={styles.statCard}>
+          <Ionicons name="school" size={24} color="#8B5CF6" />
           <Text style={styles.statValue}>
             {profile?.completedLessonCount ?? 0}
           </Text>
-
           <Text style={styles.statLabel}>Lessons completed</Text>
         </View>
       </View>
@@ -455,6 +473,41 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
+  xpCard: {
+    backgroundColor: "#18181B",
+    borderWidth: 1,
+    borderColor: "#3F3F46",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 30,
+    gap: 12,
+  },
+
+  xpHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+
+  xpTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  xpTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  xpAmount: {
+    color: "#A1A1AA",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
   sectionHeadingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -485,11 +538,13 @@ const styles = StyleSheet.create({
   statCard: {
     flexGrow: 1,
     minWidth: 170,
+    alignItems: "center",
     backgroundColor: "#18181B",
     borderWidth: 1,
     borderColor: "#3F3F46",
     borderRadius: 16,
     padding: 20,
+    gap: 5,
   },
 
   statValue: {
@@ -501,7 +556,8 @@ const styles = StyleSheet.create({
   statLabel: {
     color: "#A1A1AA",
     fontSize: 14,
-    marginTop: 5,
+    marginTop: 2,
+    textAlign: "center",
   },
 
   achievementsLoading: {
