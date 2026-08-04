@@ -1,56 +1,169 @@
-# Welcome to your Expo app 👋
+# Sacbé Forge
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile learning application built with React Native, Expo, and Firebase.
 
-## Get started
+Sacbé Forge helps users learn concepts through structured learning paths, interactive lessons, quizzes, and experience (XP) progression inspired by learning platforms such as Duolingo and Brilliant.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+- User registration and login using Firebase Authentication
+- Multiple programming learning paths
+- Interactive lessons and quizzes
+- XP and lesson progression
+- Persistent progress saved with Firebase Firestore
+- User profile with statistics
+- Modern mobile interface built with Expo Router
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## Tech Stack
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- React Native
+- Expo
+- TypeScript
+- Expo Router
+- Firebase Authentication
+- Firebase Firestore
+- Formik
+- Yup
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## Getting Started
 
-When you're ready, run:
+### Prerequisites
+
+Install the following before running the project:
+
+- Node.js (LTS)
+- npm
+- Expo Go (Android/iOS) or Android Studio Emulator
+
+---
+
+## Installation
+
+### 1. Clone the repository
 
 ```bash
-npm run reset-project
+git clone <repository-url>
+cd Sacbe-Forge-main
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Install dependencies
 
-### Other setup steps
+```bash
+npm install
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+### 3. Create the environment file
 
-## Learn more
+Create a file named
 
-To learn more about developing your project with Expo, look at the following resources:
+```
+.env
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+in the root directory.
 
-## Join the community
+Copy the contents of the provided
 
-Join our community of developers creating universal apps.
+```
+.env.txt
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+file into your new `.env` file. This file contains the Firebase configuration required for authentication and database connectivity.
+
+Your project should now look similar to:
+
+```
+Sacbe-Forge-main
+│
+├── .env
+├── .env.txt
+├── app
+├── assets
+├── src
+├── package.json
+└── README.md
+```
+
+### 4. Start the application
+
+```bash
+npx expo start
+```
+
+Open the application using:
+
+- Expo Go
+- Android Emulator
+- iOS Simulator
+
+---
+
+## Project Structure
+
+```
+app/
+    Application screens and routing
+
+src/
+    Components, services, context, constants, and utilities
+
+assets/
+    Images and application assets
+```
+
+---
+
+## Learning Paths
+
+Current learning paths included in the application:
+
+- Thinking in Code
+- Variables & Data
+- Control Flow
+- Functions
+- Debugging
+- Security Basics
+
+Each learning path contains multiple lessons, quizzes, XP rewards, and progress tracking.
+
+---
+
+## Firebase
+
+This project uses Firebase for:
+
+- Authentication
+- Cloud Firestore
+- User progress storage
+
+The Firebase configuration is loaded through environment variables stored inside the `.env` file.
+
+---
+
+## Team
+
+Sacbé Forge
+
+- Jonah Gile
+- Joaquin Urbano Feliciano
+- Krish Choudhary
+
+---
+
+## Course
+
+CPRG 303 — Mobile Application Development
+
+Southern Alberta Institute of Technology (SAIT)
+
+---
+
+## License
+
+This project was developed for educational purposes as part of CPRG 303 at SAIT.
