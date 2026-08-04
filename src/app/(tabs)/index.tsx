@@ -2,6 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import Reanimated, { ZoomIn } from "react-native-reanimated";
 
 import AppCard from "../../components/AppCard";
 import AppScreen from "../../components/AppScreen";
@@ -17,11 +18,16 @@ import { Spacing } from "../../constants/spacing";
 import { Typography } from "../../constants/typography";
 import { useAuth } from "../../context/AuthContext";
 import {
+  ACHIEVEMENTS,
+  subscribeToAchievements,
+  unlockAchievement,
+} from "../../services/achievementService";
+import {
   subscribeToCompletedLessonIds,
   subscribeToPathProgress,
 } from "../../services/progressService";
 import { selectLearningPath } from "../../services/userService";
-import type { LessonProgress } from "../../types/progress";
+import type { LessonProgress, UserAchievement } from "../../types/progress";
 
 interface Course {
   id: number;
@@ -142,6 +148,7 @@ function findResumeLesson(
 export default function HomeScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
+  const userId = user?.uid ?? null;
 
   const selectedPathId = profile?.selectedPathId ?? THINKING_IN_CODE_PATH_ID;
 
@@ -153,39 +160,52 @@ export default function HomeScreen() {
 
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
+  const [achievements, setAchievements] = useState<UserAchievement[]>([]);
 
   useEffect(() => {
     setPathProgress([]);
 
-    if (!user) {
+    if (!userId) {
       return;
     }
 
     return subscribeToPathProgress(
-      user.uid,
+      userId,
       selectedLearningPath.id,
       setPathProgress,
       (error) => {
         console.error("Home progress listener error:", error);
       },
     );
-  }, [user, selectedLearningPath.id]);
+  }, [userId, selectedLearningPath.id]);
 
   useEffect(() => {
     setCompletedLessonIds([]);
 
-    if (!user) {
+    if (!userId) {
       return;
     }
 
     return subscribeToCompletedLessonIds(
-      user.uid,
+      userId,
       setCompletedLessonIds,
       (error) => {
         console.error("Completed lessons listener error:", error);
       },
     );
-  }, [user]);
+  }, [userId]);
+
+  useEffect(() => {
+    setAchievements([]);
+
+    if (!userId) {
+      return;
+    }
+
+    return subscribeToAchievements(userId, setAchievements, (error) => {
+      console.error("Home achievements listener error:", error);
+    });
+  }, [userId]);
 
   const currentLesson = useMemo(
     () => findResumeLesson(selectedLessons, pathProgress),
@@ -218,6 +238,32 @@ export default function HomeScreen() {
     100,
     Math.round((xpTowardGoal / xpGoal) * 100),
   );
+
+  const forgeInitiateAchievement = ACHIEVEMENTS.find(
+    (achievement) => achievement.id === "xp-20",
+  );
+
+  const forgeInitiateEarned = achievements.some(
+    (achievement) => achievement.achievementId === "xp-20",
+  );
+
+  const xpGoalReached = totalXp >= xpGoal;
+
+  useEffect(() => {
+    if (
+      !userId ||
+      !xpGoalReached ||
+      !forgeInitiateAchievement ||
+      forgeInitiateEarned
+    ) {
+      return;
+    }
+
+    // Backfill the badge for users who already passed the goal
+    void unlockAchievement(userId, forgeInitiateAchievement).catch((error) => {
+      console.error("Home reward unlock error:", error);
+    });
+  }, [forgeInitiateAchievement, forgeInitiateEarned, userId, xpGoalReached]);
 
   const courses = useMemo(
     () =>
@@ -254,14 +300,10 @@ export default function HomeScreen() {
     router.push(`/skill-card/${currentLesson.id}` as never);
   }
 
-  async function openCourse(course: Course) {
+  function openCourse(course: Course) {
     if (!course.available) {
       alert(`${course.title} is coming soon`);
       return;
-    }
-
-    if (user) {
-      await selectLearningPath(user.uid, course.pathId);
     }
 
     router.push({
@@ -270,6 +312,16 @@ export default function HomeScreen() {
         pathId: course.pathId,
       },
     } as never);
+
+    if (userId) {
+      void selectLearningPath(userId, course.pathId).catch((error) => {
+        console.error("Selected path error:", error);
+      });
+    }
+  }
+
+  function openAchievements() {
+    router.push("/profile" as never);
   }
 
   return (
@@ -286,7 +338,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <Text style={styles.appTitle}>SkillForge</Text>
+          <Text style={styles.appTitle}>Sacbé Forge</Text>
         </View>
 
         <AppCard>
@@ -372,7 +424,9 @@ export default function HomeScreen() {
             <View style={styles.goalInformation}>
               <Text style={styles.goalTitle}>XP Goal</Text>
 
-              <Text style={styles.goalSubtitle}>Earn {xpGoal} XP</Text>
+              <Text style={styles.goalSubtitle}>
+                {xpGoalReached ? "Forge Initiate earned" : `Earn ${xpGoal} XP`}
+              </Text>
 
               <View style={styles.goalProgressRow}>
                 <View style={styles.goalProgressBar}>
@@ -385,7 +439,40 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <Ionicons name="gift-outline" size={30} color={Colors.warning} />
+            <Pressable
+              style={({ pressed }) => [
+                styles.rewardButton,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={openAchievements}
+              accessibilityRole="button"
+              accessibilityLabel={
+                xpGoalReached
+                  ? "Open the Forge Initiate achievement"
+                  : "View the locked XP reward"
+              }
+            >
+              {xpGoalReached ? (
+                <Reanimated.View
+                  entering={ZoomIn.duration(420)}
+                  style={styles.rewardBadge}
+                >
+                  <Ionicons name="ribbon" size={28} color="#FACC15" />
+
+                  <View style={styles.rewardCheck}>
+                    <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                  </View>
+                </Reanimated.View>
+              ) : (
+                <View style={styles.rewardLocked}>
+                  <Ionicons
+                    name="gift-outline"
+                    size={28}
+                    color={Colors.warning}
+                  />
+                </View>
+              )}
+            </Pressable>
           </View>
         </AppCard>
 
@@ -614,6 +701,49 @@ const styles = StyleSheet.create({
   goalProgressText: {
     color: Colors.textMuted,
     fontSize: Typography.caption,
+  },
+
+  rewardButton: {
+    width: 54,
+    height: 54,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  rewardBadge: {
+    width: 50,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#422006",
+    borderWidth: 2,
+    borderColor: "#FACC15",
+    borderRadius: 25,
+  },
+
+  rewardCheck: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.success,
+    borderWidth: 2,
+    borderColor: Colors.surface,
+    borderRadius: 10,
+  },
+
+  rewardLocked: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 24,
   },
 
   coursesSection: {

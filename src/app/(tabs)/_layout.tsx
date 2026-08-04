@@ -45,6 +45,9 @@ function CustomTabBar({ state, navigation }: any) {
                 key={route.key}
                 onPress={handlePress}
                 style={styles.tabItem}
+                accessibilityRole="button"
+                accessibilityLabel={`${tab.label} tab`}
+                accessibilityState={{ selected: isFocused }}
               >
                 <Ionicons
                   name={isFocused ? tab.activeIcon : tab.inactiveIcon}
@@ -77,6 +80,11 @@ export default function TabsLayout() {
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
+        lazy: false,
+        animation: "fade",
+        sceneStyle: {
+          backgroundColor: Colors.background,
+        },
       }}
     >
       <Tabs.Screen name="index" />

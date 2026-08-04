@@ -35,6 +35,9 @@ export default function AppScreen({
       {scrollable ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          alwaysBounceVertical={false}
+          bounces={false}
+          overScrollMode="never"
           showsVerticalScrollIndicator={false}
         >
           {/* Limit wide desktop screens without changing mobile */}
@@ -76,6 +79,7 @@ const styles = StyleSheet.create({
   },
 
   scrollFrame: {
+    flexGrow: 1,
     width: "100%",
     maxWidth: MAX_CONTENT_WIDTH,
     alignSelf: "center",
