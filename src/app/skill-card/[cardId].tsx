@@ -1,16 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Easing,
   Animated as NativeAnimated,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from "react-native";
 import Reanimated, { FadeInDown, ZoomIn } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,6 +40,13 @@ import {
 import { selectLearningPath } from "../../services/userService";
 import type { LessonProgress, UserNote } from "../../types/progress";
 
+type WebScrollStyle = ViewStyle & {
+  overscrollBehavior?: "auto" | "contain" | "none";
+};
+
+const WEB_SCROLL_STYLE: WebScrollStyle | undefined =
+  Platform.OS === "web" ? { overscrollBehavior: "none" } : undefined;
+
 function quizAnswersMatch(
   firstAnswers: Record<string, number>,
   secondAnswers: Record<string, number>,
@@ -56,6 +65,7 @@ function quizAnswersMatch(
 export default function SkillCardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const { user, profile, authReady, profileReady } = useAuth();
 
@@ -70,12 +80,16 @@ export default function SkillCardScreen() {
   const pathId = learningPath?.id;
   const lessonOrder = pathId ? getLessonOrder(pathId) : [];
   const lessonContent = lesson ? getLessonContent(lesson.id) : null;
+  const progressDataKey =
+    user && pathId && lessonId ? `${user.uid}:${pathId}:${lessonId}` : null;
 
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
   const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
   const [notes, setNotes] = useState<UserNote[]>([]);
   const [noteContent, setNoteContent] = useState("");
-  const [dataReady, setDataReady] = useState(false);
+  const [readyProgressDataKey, setReadyProgressDataKey] = useState<
+    string | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -89,30 +103,38 @@ export default function SkillCardScreen() {
   const [celebrationXp, setCelebrationXp] = useState(0);
 
   const [celebrationProgress] = useState(() => new NativeAnimated.Value(0));
+  const dataReady =
+    !user || !pathId || readyProgressDataKey === progressDataKey;
+  // Reset every lesson to the real top after loading
+  useEffect(() => {
+    if (dataReady) {
+      scrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+    }
+  }, [dataReady, lessonId]);
 
   useEffect(() => {
     if (!user) {
       setPathProgress([]);
       setCompletedLessonIds([]);
-      setDataReady(true);
+      setReadyProgressDataKey(null);
       return;
     }
 
-    if (!pathId) {
+    if (!pathId || !lessonId) {
       setPathProgress([]);
       setCompletedLessonIds([]);
-      setDataReady(true);
+      setReadyProgressDataKey(null);
       return;
     }
 
-    setDataReady(false);
+    const currentProgressDataKey = `${user.uid}:${pathId}:${lessonId}`;
 
     let progressLoaded = false;
     let completedLessonsLoaded = false;
 
     function finishLoadingWhenReady() {
       if (progressLoaded && completedLessonsLoaded) {
-        setDataReady(true);
+        setReadyProgressDataKey(currentProgressDataKey);
       }
     }
 
@@ -428,12 +450,46 @@ export default function SkillCardScreen() {
     router.replace("/paths" as never);
   }
 
+  const lessonHeader = (
+    <View style={styles.headerBar}>
+      <View style={styles.headerContent}>
+        <View style={styles.topRow}>
+          <Pressable
+            style={styles.backButton}
+            onPress={handleBack}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
+          </Pressable>
+
+          <Text style={styles.pathName} numberOfLines={1}>
+            {learningPath?.title ?? "Lesson"}
+          </Text>
+
+          {user ? (
+            <View style={styles.xpBadge}>
+              <Ionicons name="sparkles" size={17} color={Colors.warning} />
+
+              <Text style={styles.xpText}>{profile?.xp ?? 0} XP</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+
   if (!authReady || (user && !profileReady) || (user && !dataReady)) {
     return (
-      <SafeAreaView style={styles.centeredScreen}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <SafeAreaView style={styles.screen} edges={["top"]}>
+        {lessonHeader}
 
-        <Text style={styles.loadingText}>Loading lesson progress</Text>
+        <View style={styles.centeredContent}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+
+          <Text style={styles.loadingText}>Loading lesson progress</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -534,41 +590,26 @@ export default function SkillCardScreen() {
         </View>
       ) : null}
 
+      {lessonHeader}
+
       <ScrollView
+        ref={scrollViewRef}
+        style={WEB_SCROLL_STYLE}
         contentContainerStyle={styles.content}
+        alwaysBounceVertical={false}
+        bounces={false}
         keyboardShouldPersistTaps="handled"
+        overScrollMode="never"
         showsVerticalScrollIndicator={false}
       >
-        <Reanimated.View
-          key={lesson.id}
-          entering={FadeInDown.duration(850).withInitialValues({
-            opacity: 0,
-            transform: [{ translateY: 70 }],
-          })}
-        >
-          <View style={styles.topRow}>
-            <Pressable
-              style={styles.backButton}
-              onPress={handleBack}
-              hitSlop={12}
-            >
-              <Ionicons
-                name="arrow-back"
-                size={28}
-                color={Colors.textPrimary}
-              />
-            </Pressable>
-
-            <Text style={styles.pathName}>{learningPath.title}</Text>
-
-            <View style={styles.xpBadge}>
-              <Ionicons name="sparkles" size={17} color={Colors.warning} />
-
-              <Text style={styles.xpText}>{profile?.xp ?? 0} XP</Text>
-            </View>
-          </View>
-
-          <View style={styles.lessonCard}>
+        <View>
+          <Reanimated.View
+            entering={FadeInDown.delay(80).duration(520).withInitialValues({
+              opacity: 0,
+              translateY: 30,
+            })}
+            style={styles.lessonCard}
+          >
             <View style={styles.lessonNumber}>
               <Text style={styles.lessonNumberText}>{lesson.number}</Text>
             </View>
@@ -578,7 +619,7 @@ export default function SkillCardScreen() {
 
               <Text style={styles.description}>{lesson.description}</Text>
             </View>
-          </View>
+          </Reanimated.View>
 
           {lessonContent ? (
             <>
@@ -1070,7 +1111,7 @@ export default function SkillCardScreen() {
               )}
             </View>
           </View>
-        </Reanimated.View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1090,6 +1131,13 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
+  centeredContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+
   content: {
     width: "100%",
     maxWidth: 900,
@@ -1104,10 +1152,25 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
 
+  headerBar: {
+    width: "100%",
+    backgroundColor: Colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceBorder,
+    zIndex: 10,
+  },
+
+  headerContent: {
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+
   topRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 22,
   },
 
   backButton: {

@@ -1,18 +1,18 @@
 import {
-    collection,
-    doc,
-    getDoc,
-    onSnapshot,
-    serverTimestamp,
-    setDoc,
-    type FirestoreError,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type FirestoreError,
 } from "firebase/firestore";
 
 import { db } from "../config/firebase";
 import type {
-    AchievementDefinition,
-    CompleteLessonResult,
-    UserAchievement,
+  AchievementDefinition,
+  CompleteLessonResult,
+  UserAchievement,
 } from "../types/progress";
 
 const USERS_COLLECTION = "users";
@@ -32,6 +32,13 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
     description: "Complete five lessons.",
     metric: "completedLessons",
     requirement: 5,
+  },
+  {
+    id: "xp-20",
+    title: "Forge Initiate",
+    description: "Earn your first 20 XP.",
+    metric: "xp",
+    requirement: 20,
   },
   {
     id: "xp-100",

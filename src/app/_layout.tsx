@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+import { Colors } from "../constants/colors";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 
 function ProtectedNavigator() {
@@ -16,7 +17,15 @@ function ProtectedNavigator() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: "fade",
+        contentStyle: {
+          backgroundColor: Colors.background,
+        },
+      }}
+    >
       {/* Only logged-out users can access authentication */}
       <Stack.Protected guard={!user}>
         <Stack.Screen name="auth" />
@@ -47,6 +56,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#09090B",
+    backgroundColor: Colors.background,
   },
 });

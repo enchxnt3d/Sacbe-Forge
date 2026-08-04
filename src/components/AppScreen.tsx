@@ -1,7 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
-import { ScrollView, StyleSheet } from "react-native";
-import Animated, { Easing, FadeInDown } from "react-native-reanimated";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../constants/colors";
@@ -13,15 +12,6 @@ interface AppScreenProps {
 }
 
 const MAX_CONTENT_WIDTH = 1200;
-const SCREEN_ENTRY_DURATION = 520;
-
-// Keep this builder stable so every screen uses the same motion
-const SCREEN_ENTRANCE = FadeInDown.duration(SCREEN_ENTRY_DURATION)
-  .easing(Easing.out(Easing.cubic))
-  .withInitialValues({
-    opacity: 0,
-    translateY: 36,
-  });
 
 export default function AppScreen({
   children,
@@ -45,17 +35,16 @@ export default function AppScreen({
       {scrollable ? (
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          alwaysBounceVertical={false}
+          bounces={false}
+          overScrollMode="never"
           showsVerticalScrollIndicator={false}
         >
           {/* Limit wide desktop screens without changing mobile */}
-          <Animated.View entering={SCREEN_ENTRANCE} style={styles.scrollFrame}>
-            {children}
-          </Animated.View>
+          <View style={styles.scrollFrame}>{children}</View>
         </ScrollView>
       ) : (
-        <Animated.View entering={SCREEN_ENTRANCE} style={styles.contentFrame}>
-          {children}
-        </Animated.View>
+        <View style={styles.contentFrame}>{children}</View>
       )}
     </SafeAreaView>
   );
