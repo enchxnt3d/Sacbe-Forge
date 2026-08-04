@@ -412,37 +412,32 @@ export default function PathsScreen() {
     return Array.from(completedIds);
   }, [completedLessonIds, pathProgress]);
 
-  const currentLesson = useMemo(
-    () => findCurrentLesson(lessons, progressByLesson, allCompletedLessonIds),
-    [lessons, progressByLesson, allCompletedLessonIds],
+  // React Compiler handles these small calculations automatically
+  const currentLesson = findCurrentLesson(
+    lessons,
+    progressByLesson,
+    allCompletedLessonIds,
   );
 
-  const pathProgressPercent = useMemo(() => {
-    const totalProgress = lessons.reduce((total, lesson) => {
-      if (allCompletedLessonIds.includes(lesson.id)) {
-        return total + 100;
-      }
+  const totalProgress = lessons.reduce((total, lesson) => {
+    if (allCompletedLessonIds.includes(lesson.id)) {
+      return total + 100;
+    }
 
-      return total + (progressByLesson.get(lesson.id)?.progressPercent ?? 0);
-    }, 0);
+    return total + (progressByLesson.get(lesson.id)?.progressPercent ?? 0);
+  }, 0);
 
-    return lessons.length === 0
-      ? 0
-      : Math.round(totalProgress / lessons.length);
-  }, [lessons, progressByLesson, allCompletedLessonIds]);
+  const pathProgressPercent =
+    lessons.length === 0 ? 0 : Math.round(totalProgress / lessons.length);
 
   const leftX = canvasWidth * 0.32;
   const rightX = canvasWidth * 0.72;
 
   // Lesson positions are generated from the lesson catalog
-  const lessonCenters = useMemo(
-    () =>
-      lessons.map((_, index) => ({
-        x: index % 2 === 0 ? leftX : rightX,
-        y: 70 + index * 130,
-      })),
-    [lessons, leftX, rightX],
-  );
+  const lessonCenters = lessons.map((_, index) => ({
+    x: index % 2 === 0 ? leftX : rightX,
+    y: 70 + index * 130,
+  }));
 
   const pathCanvasHeight = Math.max(790, 140 + lessons.length * 130);
 
