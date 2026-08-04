@@ -16,7 +16,10 @@ import {
 import { Spacing } from "../../constants/spacing";
 import { Typography } from "../../constants/typography";
 import { useAuth } from "../../context/AuthContext";
-import { subscribeToPathProgress } from "../../services/progressService";
+import {
+  subscribeToCompletedLessonIds,
+  subscribeToPathProgress,
+} from "../../services/progressService";
 import { selectLearningPath } from "../../services/userService";
 import type { LessonProgress } from "../../types/progress";
 
@@ -149,6 +152,7 @@ export default function HomeScreen() {
   const selectedLessons = selectedLearningPath.lessons;
 
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
+  const [completedLessonIds, setCompletedLessonIds] = useState<string[]>([]);
 
   useEffect(() => {
     setPathProgress([]);
@@ -166,6 +170,22 @@ export default function HomeScreen() {
       },
     );
   }, [user, selectedLearningPath.id]);
+
+  useEffect(() => {
+    setCompletedLessonIds([]);
+
+    if (!user) {
+      return;
+    }
+
+    return subscribeToCompletedLessonIds(
+      user.uid,
+      setCompletedLessonIds,
+      (error) => {
+        console.error("Completed lessons listener error:", error);
+      },
+    );
+  }, [user]);
 
   const currentLesson = useMemo(
     () => findResumeLesson(selectedLessons, pathProgress),
@@ -202,17 +222,32 @@ export default function HomeScreen() {
   const courses = useMemo(
     () =>
       baseCourses.map((course) => {
-        if (course.pathId !== selectedLearningPath.id) {
+        const learningPath = getLearningPath(course.pathId);
+
+        if (!learningPath || learningPath.lessons.length === 0) {
           return course;
         }
 
+        const completedCount = learningPath.lessons.filter((lesson) =>
+          completedLessonIds.includes(lesson.id),
+        ).length;
+
+        const progress = Math.round(
+          (completedCount / learningPath.lessons.length) * 100,
+        );
+
+        const nextLesson =
+          learningPath.lessons.find(
+            (lesson) => !completedLessonIds.includes(lesson.id),
+          ) ?? learningPath.lessons[learningPath.lessons.length - 1]!;
+
         return {
           ...course,
-          level: currentLesson.number,
-          progress: pathProgressPercent,
+          level: nextLesson.number,
+          progress,
         };
       }),
-    [selectedLearningPath.id, currentLesson.number, pathProgressPercent],
+    [completedLessonIds],
   );
 
   function openCurrentLesson() {

@@ -65,6 +65,10 @@ export default function SkillCardScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [selectedAnswers, setSelectedAnswers] = useState<
+    Record<string, number>
+  >({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -143,6 +147,23 @@ export default function SkillCardScreen() {
       ? isLessonUnlocked(lesson.id, lessonOrder, completedLessonIds)
       : false;
 
+  const quizQuestions = lessonContent?.quiz ?? [];
+  const quizRequired = quizQuestions.length > 0;
+  const answeredQuestionCount = quizQuestions.filter(
+    (question) => selectedAnswers[question.id] !== undefined,
+  ).length;
+  const quizScore = quizQuestions.filter(
+    (question) => selectedAnswers[question.id] === question.correctAnswerIndex,
+  ).length;
+  const passingScore = Math.ceil(quizQuestions.length * 0.67);
+  const quizPassed =
+    !quizRequired || (quizSubmitted && quizScore >= passingScore);
+
+  useEffect(() => {
+    setSelectedAnswers({});
+    setQuizSubmitted(false);
+  }, [lessonId]);
+
   function clearMessages() {
     setMessage("");
     setErrorMessage("");
@@ -173,7 +194,7 @@ export default function SkillCardScreen() {
   }
 
   async function handleCompleteLesson() {
-    if (!user || !lesson || !pathId || !lessonUnlocked) {
+    if (!user || !lesson || !pathId || !lessonUnlocked || !quizPassed) {
       return;
     }
 
@@ -199,6 +220,30 @@ export default function SkillCardScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleSelectAnswer(questionId: string, optionIndex: number) {
+    if (quizSubmitted) {
+      return;
+    }
+
+    setSelectedAnswers((currentAnswers) => ({
+      ...currentAnswers,
+      [questionId]: optionIndex,
+    }));
+  }
+
+  function handleSubmitQuiz() {
+    if (answeredQuestionCount !== quizQuestions.length) {
+      return;
+    }
+
+    setQuizSubmitted(true);
+  }
+
+  function handleRetryQuiz() {
+    setSelectedAnswers({});
+    setQuizSubmitted(false);
   }
 
   async function handleSaveNote() {
@@ -493,6 +538,162 @@ export default function SkillCardScreen() {
                 ) : null}
               </View>
             ) : null}
+
+            {quizRequired ? (
+              <View style={styles.quizCard}>
+                <View style={styles.quizHeader}>
+                  <Ionicons
+                    name="help-circle-outline"
+                    size={24}
+                    color={Colors.primary}
+                  />
+
+                  <View style={styles.quizHeadingText}>
+                    <Text style={styles.quizTitle}>Quick Check</Text>
+
+                    <Text style={styles.quizSubtitle}>
+                      Answer at least {passingScore} of {quizQuestions.length}{" "}
+                      correctly
+                    </Text>
+                  </View>
+                </View>
+
+                {quizQuestions.map((question, questionIndex) => {
+                  const selectedAnswer = selectedAnswers[question.id];
+                  const isCorrect =
+                    selectedAnswer === question.correctAnswerIndex;
+
+                  return (
+                    <View key={question.id} style={styles.questionCard}>
+                      <Text style={styles.questionNumber}>
+                        Question {questionIndex + 1}
+                      </Text>
+
+                      <Text style={styles.questionText}>
+                        {question.question}
+                      </Text>
+
+                      <View style={styles.optionsList}>
+                        {question.options.map((option, optionIndex) => {
+                          const optionSelected = selectedAnswer === optionIndex;
+                          const correctOption =
+                            quizSubmitted &&
+                            optionIndex === question.correctAnswerIndex;
+                          const incorrectOption =
+                            quizSubmitted && optionSelected && !correctOption;
+
+                          return (
+                            <Pressable
+                              key={`${question.id}-option-${optionIndex}`}
+                              style={[
+                                styles.optionButton,
+                                optionSelected && styles.optionSelected,
+                                correctOption && styles.optionCorrect,
+                                incorrectOption && styles.optionIncorrect,
+                              ]}
+                              onPress={() => {
+                                handleSelectAnswer(question.id, optionIndex);
+                              }}
+                              disabled={quizSubmitted}
+                            >
+                              <View
+                                style={[
+                                  styles.optionCircle,
+                                  optionSelected && styles.optionCircleSelected,
+                                ]}
+                              >
+                                <Text style={styles.optionLetter}>
+                                  {String.fromCharCode(65 + optionIndex)}
+                                </Text>
+                              </View>
+
+                              <Text style={styles.optionText}>{option}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
+                      {quizSubmitted ? (
+                        <View
+                          style={[
+                            styles.explanationCard,
+                            isCorrect
+                              ? styles.correctExplanation
+                              : styles.incorrectExplanation,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              isCorrect
+                                ? "checkmark-circle-outline"
+                                : "close-circle-outline"
+                            }
+                            size={21}
+                            color={isCorrect ? "#86EFAC" : "#FCA5A5"}
+                          />
+
+                          <Text style={styles.explanationText}>
+                            {question.explanation}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+
+                {quizSubmitted ? (
+                  <View
+                    style={[
+                      styles.quizResult,
+                      quizPassed
+                        ? styles.quizResultPassed
+                        : styles.quizResultFailed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={quizPassed ? "trophy" : "refresh-circle"}
+                      size={28}
+                      color={quizPassed ? "#FACC15" : "#FCA5A5"}
+                    />
+
+                    <View style={styles.quizResultText}>
+                      <Text style={styles.quizResultTitle}>
+                        {quizPassed ? "Quiz passed!" : "Almost there"}
+                      </Text>
+
+                      <Text style={styles.quizResultScore}>
+                        You answered {quizScore} of {quizQuestions.length}{" "}
+                        correctly
+                      </Text>
+                    </View>
+
+                    {!quizPassed ? (
+                      <Pressable
+                        style={styles.retryButton}
+                        onPress={handleRetryQuiz}
+                      >
+                        <Text style={styles.retryButtonText}>Try Again</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                ) : (
+                  <Pressable
+                    style={[
+                      styles.submitQuizButton,
+                      answeredQuestionCount !== quizQuestions.length &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={handleSubmitQuiz}
+                    disabled={answeredQuestionCount !== quizQuestions.length}
+                  >
+                    <Text style={styles.submitQuizButtonText}>
+                      Submit Answers ({answeredQuestionCount}/
+                      {quizQuestions.length})
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : null}
           </>
         ) : (
           <View style={styles.contentUnavailableCard}>
@@ -549,11 +750,15 @@ export default function SkillCardScreen() {
             </Pressable>
 
             <Pressable
-              style={[styles.primaryAction, busy && styles.buttonDisabled]}
+              style={[
+                styles.primaryAction,
+                (busy || (!lessonCompleted && !quizPassed)) &&
+                  styles.buttonDisabled,
+              ]}
               onPress={() => {
                 void handleCompleteLesson();
               }}
-              disabled={busy}
+              disabled={busy || (!lessonCompleted && !quizPassed)}
             >
               {busy ? (
                 <ActivityIndicator color="#FFFFFF" />
@@ -568,7 +773,11 @@ export default function SkillCardScreen() {
                   />
 
                   <Text style={styles.primaryActionText}>
-                    {lessonCompleted ? "Completed" : "Complete Lesson"}
+                    {lessonCompleted
+                      ? "Completed"
+                      : quizPassed
+                        ? "Complete Lesson"
+                        : "Pass Quiz First"}
                   </Text>
                 </>
               )}
@@ -990,6 +1199,213 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     marginTop: 6,
+  },
+
+  quizCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 18,
+  },
+
+  quizHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 18,
+  },
+
+  quizHeadingText: {
+    flex: 1,
+  },
+
+  quizTitle: {
+    color: Colors.textPrimary,
+    fontSize: 21,
+    fontWeight: "700",
+  },
+
+  quizSubtitle: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    marginTop: 3,
+  },
+
+  questionCard: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 15,
+    padding: 16,
+    marginBottom: 14,
+  },
+
+  questionNumber: {
+    color: Colors.primary,
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+
+  questionText: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: "600",
+    lineHeight: 24,
+    marginTop: 7,
+  },
+
+  optionsList: {
+    gap: 9,
+    marginTop: 14,
+  },
+
+  optionButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+
+  optionSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: "#2E1065",
+  },
+
+  optionCorrect: {
+    borderColor: "#22C55E",
+    backgroundColor: "#052E16",
+  },
+
+  optionIncorrect: {
+    borderColor: "#EF4444",
+    backgroundColor: "#450A0A",
+  },
+
+  optionCircle: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.surfaceBorder,
+    borderRadius: 16,
+    marginRight: 11,
+  },
+
+  optionCircleSelected: {
+    borderColor: Colors.primary,
+  },
+
+  optionLetter: {
+    color: Colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  optionText: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  explanationCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 9,
+    borderWidth: 1,
+    borderRadius: 11,
+    padding: 12,
+    marginTop: 14,
+  },
+
+  correctExplanation: {
+    backgroundColor: "#052E16",
+    borderColor: "#166534",
+  },
+
+  incorrectExplanation: {
+    backgroundColor: "#450A0A",
+    borderColor: "#991B1B",
+  },
+
+  explanationText: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  submitQuizButton: {
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.primaryDark,
+    borderRadius: 11,
+    marginTop: 4,
+  },
+
+  submitQuizButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  quizResult: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 14,
+    marginTop: 4,
+  },
+
+  quizResultPassed: {
+    backgroundColor: "#422006",
+    borderColor: "#854D0E",
+  },
+
+  quizResultFailed: {
+    backgroundColor: "#450A0A",
+    borderColor: "#991B1B",
+  },
+
+  quizResultText: {
+    flex: 1,
+  },
+
+  quizResultTitle: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  quizResultScore: {
+    color: Colors.textMuted,
+    fontSize: 13,
+    marginTop: 3,
+  },
+
+  retryButton: {
+    backgroundColor: Colors.primaryDark,
+    borderRadius: 9,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   progressCard: {
