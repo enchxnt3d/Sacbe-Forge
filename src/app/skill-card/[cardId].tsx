@@ -3,6 +3,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Easing,
+  Animated as NativeAnimated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Reanimated, { FadeInDown, ZoomIn } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../../constants/colors";
@@ -35,6 +38,21 @@ import {
 import { selectLearningPath } from "../../services/userService";
 import type { LessonProgress, UserNote } from "../../types/progress";
 
+function quizAnswersMatch(
+  firstAnswers: Record<string, number>,
+  secondAnswers: Record<string, number>,
+) {
+  const firstQuestionIds = Object.keys(firstAnswers);
+  const secondQuestionIds = Object.keys(secondAnswers);
+
+  return (
+    firstQuestionIds.length === secondQuestionIds.length &&
+    firstQuestionIds.every(
+      (questionId) => firstAnswers[questionId] === secondAnswers[questionId],
+    )
+  );
+}
+
 export default function SkillCardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -48,13 +66,9 @@ export default function SkillCardScreen() {
     : cardIdParameter;
 
   const lesson = lessonId ? getLesson(lessonId) : undefined;
-
   const learningPath = lessonId ? getPathForLesson(lessonId) : undefined;
-
   const pathId = learningPath?.id;
-
   const lessonOrder = pathId ? getLessonOrder(pathId) : [];
-
   const lessonContent = lesson ? getLessonContent(lesson.id) : null;
 
   const [pathProgress, setPathProgress] = useState<LessonProgress[]>([]);
@@ -65,10 +79,16 @@ export default function SkillCardScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
   const [selectedAnswers, setSelectedAnswers] = useState<
     Record<string, number>
   >({});
+
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [celebrationXp, setCelebrationXp] = useState(0);
+
+  const [celebrationProgress] = useState(() => new NativeAnimated.Value(0));
 
   useEffect(() => {
     if (!user) {
@@ -87,13 +107,43 @@ export default function SkillCardScreen() {
 
     setDataReady(false);
 
+    let progressLoaded = false;
+    let completedLessonsLoaded = false;
+
+    function finishLoadingWhenReady() {
+      if (progressLoaded && completedLessonsLoaded) {
+        setDataReady(true);
+      }
+    }
+
     const unsubscribeProgress = subscribeToPathProgress(
       user.uid,
       pathId,
-      setPathProgress,
+      (progress) => {
+        setPathProgress(progress);
+
+        const savedLessonProgress = progress.find(
+          (item) => item.lessonId === lessonId,
+        );
+
+        // Restore only progress created by the real quiz system
+        if (savedLessonProgress?.progressVersion === 2) {
+          setSelectedAnswers(savedLessonProgress.quizAnswers ?? {});
+          setQuizSubmitted(savedLessonProgress.quizSubmitted ?? false);
+        } else {
+          setSelectedAnswers({});
+          setQuizSubmitted(false);
+        }
+
+        progressLoaded = true;
+        finishLoadingWhenReady();
+      },
       (error) => {
         console.error("Path progress error:", error);
         setErrorMessage("Unable to load lesson progress");
+
+        progressLoaded = true;
+        finishLoadingWhenReady();
       },
     );
 
@@ -101,12 +151,16 @@ export default function SkillCardScreen() {
       user.uid,
       (lessonIds) => {
         setCompletedLessonIds(lessonIds);
-        setDataReady(true);
+
+        completedLessonsLoaded = true;
+        finishLoadingWhenReady();
       },
       (error) => {
         console.error("Completed lessons error:", error);
         setErrorMessage("Unable to load completed lessons");
-        setDataReady(true);
+
+        completedLessonsLoaded = true;
+        finishLoadingWhenReady();
       },
     );
 
@@ -118,7 +172,7 @@ export default function SkillCardScreen() {
       unsubscribeProgress();
       unsubscribeCompleted();
     };
-  }, [user, pathId]);
+  }, [user, pathId, lessonId]);
 
   useEffect(() => {
     if (!user || !lesson) {
@@ -136,8 +190,6 @@ export default function SkillCardScreen() {
     ? pathProgress.find((progress) => progress.lessonId === lesson.id)
     : undefined;
 
-  const progressPercent = currentProgress?.progressPercent ?? 0;
-
   const lessonCompleted = lesson
     ? completedLessonIds.includes(lesson.id)
     : false;
@@ -149,20 +201,58 @@ export default function SkillCardScreen() {
 
   const quizQuestions = lessonContent?.quiz ?? [];
   const quizRequired = quizQuestions.length > 0;
+
   const answeredQuestionCount = quizQuestions.filter(
     (question) => selectedAnswers[question.id] !== undefined,
   ).length;
+
   const quizScore = quizQuestions.filter(
     (question) => selectedAnswers[question.id] === question.correctAnswerIndex,
   ).length;
+
   const passingScore = Math.ceil(quizQuestions.length * 0.67);
+
   const quizPassed =
     !quizRequired || (quizSubmitted && quizScore >= passingScore);
 
-  useEffect(() => {
-    setSelectedAnswers({});
-    setQuizSubmitted(false);
-  }, [lessonId]);
+  // Quiz answers earn progress while completion stays at 100 percent
+  const answerProgress = quizRequired
+    ? Math.round((answeredQuestionCount / quizQuestions.length) * 75)
+    : 0;
+
+  const activityProgress = lessonCompleted
+    ? 100
+    : quizSubmitted
+      ? 90
+      : answerProgress;
+
+  const savedProgress =
+    currentProgress?.progressVersion === 2
+      ? currentProgress.progressPercent
+      : 0;
+
+  const savedQuizAnswers =
+    currentProgress?.progressVersion === 2
+      ? (currentProgress.quizAnswers ?? {})
+      : {};
+
+  const savedQuizSubmitted =
+    currentProgress?.progressVersion === 2
+      ? (currentProgress.quizSubmitted ?? false)
+      : false;
+
+  const nextProgress = Math.max(savedProgress, activityProgress);
+
+  const quizStateChanged =
+    !quizAnswersMatch(savedQuizAnswers, selectedAnswers) ||
+    savedQuizSubmitted !== quizSubmitted;
+
+  const progressPercent = lessonCompleted ? 100 : nextProgress;
+
+  const hasUnsavedProgress =
+    !lessonCompleted &&
+    activityProgress > 0 &&
+    (nextProgress > savedProgress || quizStateChanged);
 
   function clearMessages() {
     setMessage("");
@@ -170,19 +260,22 @@ export default function SkillCardScreen() {
   }
 
   async function handleSaveProgress() {
-    if (!user || !lesson || !pathId || lessonCompleted) {
+    if (!user || !lesson || !pathId || lessonCompleted || !hasUnsavedProgress) {
       return;
     }
 
     clearMessages();
 
-    const nextProgress =
-      progressPercent === 0 ? 25 : Math.min(99, progressPercent + 25);
-
     try {
       setBusy(true);
 
-      await saveLessonProgress(user.uid, lesson.id, pathId, nextProgress);
+      await saveLessonProgress(user.uid, {
+        lessonId: lesson.id,
+        pathId,
+        progressPercent: nextProgress,
+        quizAnswers: selectedAnswers,
+        quizSubmitted,
+      });
 
       setMessage(`Progress saved at ${nextProgress}%`);
     } catch (error) {
@@ -213,6 +306,8 @@ export default function SkillCardScreen() {
         setMessage("This lesson was already completed");
       } else {
         setMessage(`Lesson completed and ${result.xpAwarded} XP earned`);
+
+        playCompletionCelebration(result.xpAwarded);
       }
     } catch (error) {
       console.error("Complete lesson error:", error);
@@ -220,6 +315,36 @@ export default function SkillCardScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function playCompletionCelebration(xpAwarded: number) {
+    // Make lesson completion feel clear and rewarding
+    setCelebrationXp(xpAwarded);
+    setShowCelebration(true);
+
+    celebrationProgress.stopAnimation();
+    celebrationProgress.setValue(0);
+
+    NativeAnimated.sequence([
+      NativeAnimated.spring(celebrationProgress, {
+        toValue: 1,
+        damping: 9,
+        stiffness: 150,
+        mass: 0.8,
+        useNativeDriver: true,
+      }),
+      NativeAnimated.delay(1600),
+      NativeAnimated.timing(celebrationProgress, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setShowCelebration(false);
+      }
+    });
   }
 
   function handleSelectAnswer(questionId: string, optionIndex: number) {
@@ -283,6 +408,7 @@ export default function SkillCardScreen() {
       setBusy(true);
 
       await deleteUserNote(user.uid, noteId);
+
       setMessage("Note deleted");
     } catch (error) {
       console.error("Delete note error:", error);
@@ -290,6 +416,16 @@ export default function SkillCardScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleBack() {
+    // Use the path screen when this page was opened directly
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace("/paths" as never);
   }
 
   if (!authReady || (user && !profileReady) || (user && !dataReady)) {
@@ -332,7 +468,7 @@ export default function SkillCardScreen() {
       <SafeAreaView style={styles.centeredScreen}>
         <Text style={styles.emptyTitle}>Lesson not found</Text>
 
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
+        <Pressable style={styles.secondaryButton} onPress={handleBack}>
           <Text style={styles.secondaryButtonText}>Go Back</Text>
         </Pressable>
       </SafeAreaView>
@@ -350,7 +486,7 @@ export default function SkillCardScreen() {
           Complete the previous lesson to unlock this node
         </Text>
 
-        <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
+        <Pressable style={styles.secondaryButton} onPress={handleBack}>
           <Text style={styles.secondaryButtonText}>Back to Path</Text>
         </Pressable>
       </SafeAreaView>
@@ -359,504 +495,582 @@ export default function SkillCardScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
+      {showCelebration ? (
+        <View style={styles.celebrationLayer} pointerEvents="none">
+          <NativeAnimated.View
+            style={[
+              styles.celebrationCard,
+              {
+                opacity: celebrationProgress,
+                transform: [
+                  {
+                    translateY: celebrationProgress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [45, 0],
+                    }),
+                  },
+                  {
+                    scale: celebrationProgress.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.72, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.celebrationIcon}>
+              <Ionicons name="trophy" size={42} color="#FACC15" />
+            </View>
+
+            <Text style={styles.celebrationTitle}>Lesson Complete</Text>
+
+            <Text style={styles.celebrationXp}>+{celebrationXp} XP</Text>
+
+            <Text style={styles.celebrationText}>
+              Your progress and XP have been saved
+            </Text>
+          </NativeAnimated.View>
+        </View>
+      ) : null}
+
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.topRow}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.back()}
-            hitSlop={12}
-          >
-            <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
-          </Pressable>
+        <Reanimated.View
+          key={lesson.id}
+          entering={FadeInDown.duration(850).withInitialValues({
+            opacity: 0,
+            transform: [{ translateY: 70 }],
+          })}
+        >
+          <View style={styles.topRow}>
+            <Pressable
+              style={styles.backButton}
+              onPress={handleBack}
+              hitSlop={12}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={28}
+                color={Colors.textPrimary}
+              />
+            </Pressable>
 
-          <Text style={styles.pathName}>{learningPath.title}</Text>
+            <Text style={styles.pathName}>{learningPath.title}</Text>
 
-          <View style={styles.xpBadge}>
-            <Ionicons name="sparkles" size={17} color={Colors.warning} />
+            <View style={styles.xpBadge}>
+              <Ionicons name="sparkles" size={17} color={Colors.warning} />
 
-            <Text style={styles.xpText}>{profile?.xp ?? 0} XP</Text>
+              <Text style={styles.xpText}>{profile?.xp ?? 0} XP</Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.lessonCard}>
-          <View style={styles.lessonNumber}>
-            <Text style={styles.lessonNumberText}>{lesson.number}</Text>
-          </View>
-
-          <View style={styles.lessonHeading}>
-            <Text style={styles.title}>{lesson.title}</Text>
-
-            <Text style={styles.description}>{lesson.description}</Text>
-          </View>
-        </View>
-
-        {lessonContent ? (
-          <>
-            <View style={styles.overviewCard}>
-              <View style={styles.overviewTopRow}>
-                <View style={styles.overviewMeta}>
-                  <Ionicons
-                    name="time-outline"
-                    size={20}
-                    color={Colors.primary}
-                  />
-
-                  <Text style={styles.overviewMetaText}>
-                    About {lessonContent.estimatedMinutes} minutes
-                  </Text>
-                </View>
-
-                <View style={styles.overviewMeta}>
-                  <Ionicons
-                    name="trophy-outline"
-                    size={20}
-                    color={Colors.warning}
-                  />
-
-                  <Text style={styles.overviewMetaText}>
-                    {lesson.xpReward} XP
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.objectivesTitle}>Learning objectives</Text>
-
-              {lessonContent.objectives.map((objective, index) => (
-                <View
-                  key={`${lesson.id}-objective-${index}`}
-                  style={styles.objectiveRow}
-                >
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={19}
-                    color={Colors.success}
-                    style={styles.objectiveIcon}
-                  />
-
-                  <Text style={styles.objectiveText}>{objective}</Text>
-                </View>
-              ))}
+          <View style={styles.lessonCard}>
+            <View style={styles.lessonNumber}>
+              <Text style={styles.lessonNumberText}>{lesson.number}</Text>
             </View>
 
-            {lessonContent.sections.map((section) => (
-              <View key={section.id} style={styles.contentSection}>
-                <Text style={styles.contentSectionTitle}>{section.title}</Text>
+            <View style={styles.lessonHeading}>
+              <Text style={styles.title}>{lesson.title}</Text>
 
-                {section.paragraphs.map((paragraph, index) => (
-                  <Text
-                    key={`${section.id}-paragraph-${index}`}
-                    style={styles.paragraphText}
-                  >
-                    {paragraph}
-                  </Text>
-                ))}
+              <Text style={styles.description}>{lesson.description}</Text>
+            </View>
+          </View>
 
-                {section.bulletPoints && section.bulletPoints.length > 0 ? (
-                  <View style={styles.bulletList}>
-                    {section.bulletPoints.map((bulletPoint, index) => (
-                      <View
-                        key={`${section.id}-bullet-${index}`}
-                        style={styles.bulletRow}
-                      >
-                        <View style={styles.bulletDot} />
-
-                        <Text style={styles.bulletText}>{bulletPoint}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-
-                {section.codeExample ? (
-                  <View style={styles.codeCard}>
-                    <View style={styles.codeHeader}>
-                      <Ionicons
-                        name="code-slash"
-                        size={18}
-                        color={Colors.primary}
-                      />
-
-                      <Text style={styles.codeLanguage}>
-                        {section.codeExample.language}
-                      </Text>
-                    </View>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                    >
-                      <Text selectable style={styles.codeText}>
-                        {section.codeExample.code}
-                      </Text>
-                    </ScrollView>
-                  </View>
-                ) : null}
-
-                {section.tip ? (
-                  <View style={styles.tipCard}>
+          {lessonContent ? (
+            <>
+              <View style={styles.overviewCard}>
+                <View style={styles.overviewTopRow}>
+                  <View style={styles.overviewMeta}>
                     <Ionicons
-                      name="bulb-outline"
-                      size={22}
+                      name="time-outline"
+                      size={20}
+                      color={Colors.primary}
+                    />
+
+                    <Text style={styles.overviewMetaText}>
+                      About {lessonContent.estimatedMinutes} minutes
+                    </Text>
+                  </View>
+
+                  <View style={styles.overviewMeta}>
+                    <Ionicons
+                      name="trophy-outline"
+                      size={20}
                       color={Colors.warning}
                     />
 
-                    <Text style={styles.tipText}>{section.tip}</Text>
-                  </View>
-                ) : null}
-              </View>
-            ))}
-
-            {lessonContent.practiceActivity ? (
-              <View style={styles.practiceCard}>
-                <View style={styles.practiceHeader}>
-                  <Ionicons
-                    name="flask-outline"
-                    size={23}
-                    color={Colors.primary}
-                  />
-
-                  <Text style={styles.practiceTitle}>
-                    {lessonContent.practiceActivity.title}
-                  </Text>
-                </View>
-
-                <Text style={styles.practiceInstructions}>
-                  {lessonContent.practiceActivity.instructions}
-                </Text>
-
-                {lessonContent.practiceActivity.expectedResult ? (
-                  <View style={styles.expectedCard}>
-                    <Text style={styles.expectedLabel}>Expected result</Text>
-
-                    <Text style={styles.expectedText}>
-                      {lessonContent.practiceActivity.expectedResult}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            {quizRequired ? (
-              <View style={styles.quizCard}>
-                <View style={styles.quizHeader}>
-                  <Ionicons
-                    name="help-circle-outline"
-                    size={24}
-                    color={Colors.primary}
-                  />
-
-                  <View style={styles.quizHeadingText}>
-                    <Text style={styles.quizTitle}>Quick Check</Text>
-
-                    <Text style={styles.quizSubtitle}>
-                      Answer at least {passingScore} of {quizQuestions.length}{" "}
-                      correctly
+                    <Text style={styles.overviewMetaText}>
+                      {lesson.xpReward} XP
                     </Text>
                   </View>
                 </View>
 
-                {quizQuestions.map((question, questionIndex) => {
-                  const selectedAnswer = selectedAnswers[question.id];
-                  const isCorrect =
-                    selectedAnswer === question.correctAnswerIndex;
+                <Text style={styles.objectivesTitle}>Learning objectives</Text>
 
-                  return (
-                    <View key={question.id} style={styles.questionCard}>
-                      <Text style={styles.questionNumber}>
-                        Question {questionIndex + 1}
-                      </Text>
-
-                      <Text style={styles.questionText}>
-                        {question.question}
-                      </Text>
-
-                      <View style={styles.optionsList}>
-                        {question.options.map((option, optionIndex) => {
-                          const optionSelected = selectedAnswer === optionIndex;
-                          const correctOption =
-                            quizSubmitted &&
-                            optionIndex === question.correctAnswerIndex;
-                          const incorrectOption =
-                            quizSubmitted && optionSelected && !correctOption;
-
-                          return (
-                            <Pressable
-                              key={`${question.id}-option-${optionIndex}`}
-                              style={[
-                                styles.optionButton,
-                                optionSelected && styles.optionSelected,
-                                correctOption && styles.optionCorrect,
-                                incorrectOption && styles.optionIncorrect,
-                              ]}
-                              onPress={() => {
-                                handleSelectAnswer(question.id, optionIndex);
-                              }}
-                              disabled={quizSubmitted}
-                            >
-                              <View
-                                style={[
-                                  styles.optionCircle,
-                                  optionSelected && styles.optionCircleSelected,
-                                ]}
-                              >
-                                <Text style={styles.optionLetter}>
-                                  {String.fromCharCode(65 + optionIndex)}
-                                </Text>
-                              </View>
-
-                              <Text style={styles.optionText}>{option}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-
-                      {quizSubmitted ? (
-                        <View
-                          style={[
-                            styles.explanationCard,
-                            isCorrect
-                              ? styles.correctExplanation
-                              : styles.incorrectExplanation,
-                          ]}
-                        >
-                          <Ionicons
-                            name={
-                              isCorrect
-                                ? "checkmark-circle-outline"
-                                : "close-circle-outline"
-                            }
-                            size={21}
-                            color={isCorrect ? "#86EFAC" : "#FCA5A5"}
-                          />
-
-                          <Text style={styles.explanationText}>
-                            {question.explanation}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-
-                {quizSubmitted ? (
+                {lessonContent.objectives.map((objective, index) => (
                   <View
-                    style={[
-                      styles.quizResult,
-                      quizPassed
-                        ? styles.quizResultPassed
-                        : styles.quizResultFailed,
-                    ]}
+                    key={`${lesson.id}-objective-${index}`}
+                    style={styles.objectiveRow}
                   >
                     <Ionicons
-                      name={quizPassed ? "trophy" : "refresh-circle"}
-                      size={28}
-                      color={quizPassed ? "#FACC15" : "#FCA5A5"}
+                      name="checkmark-circle-outline"
+                      size={19}
+                      color={Colors.success}
+                      style={styles.objectiveIcon}
                     />
 
-                    <View style={styles.quizResultText}>
-                      <Text style={styles.quizResultTitle}>
-                        {quizPassed ? "Quiz passed!" : "Almost there"}
-                      </Text>
+                    <Text style={styles.objectiveText}>{objective}</Text>
+                  </View>
+                ))}
+              </View>
 
-                      <Text style={styles.quizResultScore}>
-                        You answered {quizScore} of {quizQuestions.length}{" "}
+              {lessonContent.sections.map((section) => (
+                <View key={section.id} style={styles.contentSection}>
+                  <Text style={styles.contentSectionTitle}>
+                    {section.title}
+                  </Text>
+
+                  {section.paragraphs.map((paragraph, index) => (
+                    <Text
+                      key={`${section.id}-paragraph-${index}`}
+                      style={styles.paragraphText}
+                    >
+                      {paragraph}
+                    </Text>
+                  ))}
+
+                  {section.bulletPoints && section.bulletPoints.length > 0 ? (
+                    <View style={styles.bulletList}>
+                      {section.bulletPoints.map((bulletPoint, index) => (
+                        <View
+                          key={`${section.id}-bullet-${index}`}
+                          style={styles.bulletRow}
+                        >
+                          <View style={styles.bulletDot} />
+
+                          <Text style={styles.bulletText}>{bulletPoint}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {section.codeExample ? (
+                    <View style={styles.codeCard}>
+                      <View style={styles.codeHeader}>
+                        <Ionicons
+                          name="code-slash"
+                          size={18}
+                          color={Colors.primary}
+                        />
+
+                        <Text style={styles.codeLanguage}>
+                          {section.codeExample.language}
+                        </Text>
+                      </View>
+
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        <Text selectable style={styles.codeText}>
+                          {section.codeExample.code}
+                        </Text>
+                      </ScrollView>
+                    </View>
+                  ) : null}
+
+                  {section.tip ? (
+                    <View style={styles.tipCard}>
+                      <Ionicons
+                        name="bulb-outline"
+                        size={22}
+                        color={Colors.warning}
+                      />
+
+                      <Text style={styles.tipText}>{section.tip}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+
+              {lessonContent.practiceActivity ? (
+                <View style={styles.practiceCard}>
+                  <View style={styles.practiceHeader}>
+                    <Ionicons
+                      name="flask-outline"
+                      size={23}
+                      color={Colors.primary}
+                    />
+
+                    <Text style={styles.practiceTitle}>
+                      {lessonContent.practiceActivity.title}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.practiceInstructions}>
+                    {lessonContent.practiceActivity.instructions}
+                  </Text>
+
+                  {lessonContent.practiceActivity.expectedResult ? (
+                    <View style={styles.expectedCard}>
+                      <Text style={styles.expectedLabel}>Expected result</Text>
+
+                      <Text style={styles.expectedText}>
+                        {lessonContent.practiceActivity.expectedResult}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {quizRequired ? (
+                <View style={styles.quizCard}>
+                  <View style={styles.quizHeader}>
+                    <Ionicons
+                      name="help-circle-outline"
+                      size={24}
+                      color={Colors.primary}
+                    />
+
+                    <View style={styles.quizHeadingText}>
+                      <Text style={styles.quizTitle}>Quick Check</Text>
+
+                      <Text style={styles.quizSubtitle}>
+                        Answer at least {passingScore} of {quizQuestions.length}{" "}
                         correctly
                       </Text>
                     </View>
+                  </View>
 
-                    {!quizPassed ? (
-                      <Pressable
-                        style={styles.retryButton}
-                        onPress={handleRetryQuiz}
+                  {quizQuestions.map((question, questionIndex) => {
+                    const selectedAnswer = selectedAnswers[question.id];
+
+                    const isCorrect =
+                      selectedAnswer === question.correctAnswerIndex;
+
+                    return (
+                      <Reanimated.View
+                        key={question.id}
+                        entering={FadeInDown.delay(
+                          questionIndex * 110,
+                        ).duration(520)}
+                        style={styles.questionCard}
                       >
-                        <Text style={styles.retryButtonText}>Try Again</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ) : (
-                  <Pressable
-                    style={[
-                      styles.submitQuizButton,
-                      answeredQuestionCount !== quizQuestions.length &&
-                        styles.buttonDisabled,
-                    ]}
-                    onPress={handleSubmitQuiz}
-                    disabled={answeredQuestionCount !== quizQuestions.length}
-                  >
-                    <Text style={styles.submitQuizButtonText}>
-                      Submit Answers ({answeredQuestionCount}/
-                      {quizQuestions.length})
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            ) : null}
-          </>
-        ) : (
-          <View style={styles.contentUnavailableCard}>
-            <Ionicons
-              name="construct-outline"
-              size={35}
-              color={Colors.textMuted}
-            />
+                        <Text style={styles.questionNumber}>
+                          Question {questionIndex + 1}
+                        </Text>
 
-            <Text style={styles.contentUnavailableTitle}>
-              Lesson material coming soon
-            </Text>
+                        <Text style={styles.questionText}>
+                          {question.question}
+                        </Text>
 
-            <Text style={styles.contentUnavailableText}>
-              The progress system is ready for this lesson
-            </Text>
-          </View>
-        )}
+                        <View style={styles.optionsList}>
+                          {question.options.map((option, optionIndex) => {
+                            const optionSelected =
+                              selectedAnswer === optionIndex;
 
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.sectionTitle}>Lesson Progress</Text>
+                            const correctOption =
+                              quizSubmitted &&
+                              optionIndex === question.correctAnswerIndex;
 
-            <Text style={styles.progressPercent}>{progressPercent}%</Text>
-          </View>
+                            const incorrectOption =
+                              quizSubmitted && optionSelected && !correctOption;
 
-          <View style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: `${progressPercent}%` as `${number}%`,
-                },
-              ]}
-            />
-          </View>
+                            return (
+                              <Pressable
+                                key={`${question.id}-option-${optionIndex}`}
+                                style={[
+                                  styles.optionButton,
+                                  optionSelected && styles.optionSelected,
+                                  correctOption && styles.optionCorrect,
+                                  incorrectOption && styles.optionIncorrect,
+                                ]}
+                                onPress={() => {
+                                  handleSelectAnswer(question.id, optionIndex);
+                                }}
+                                disabled={quizSubmitted}
+                              >
+                                <View
+                                  style={[
+                                    styles.optionCircle,
+                                    optionSelected &&
+                                      styles.optionCircleSelected,
+                                  ]}
+                                >
+                                  <Text style={styles.optionLetter}>
+                                    {String.fromCharCode(65 + optionIndex)}
+                                  </Text>
+                                </View>
 
-          <Text style={styles.rewardText}>Reward: {lesson.xpReward} XP</Text>
+                                <Text style={styles.optionText}>{option}</Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
 
-          <View style={styles.buttonRow}>
-            <Pressable
-              style={[
-                styles.secondaryAction,
-                (busy || lessonCompleted) && styles.buttonDisabled,
-              ]}
-              onPress={() => {
-                void handleSaveProgress();
-              }}
-              disabled={busy || lessonCompleted}
-            >
-              <Text style={styles.secondaryActionText}>
-                {lessonCompleted ? "Progress Complete" : "Save Progress"}
-              </Text>
-            </Pressable>
+                        {quizSubmitted ? (
+                          <View
+                            style={[
+                              styles.explanationCard,
+                              isCorrect
+                                ? styles.correctExplanation
+                                : styles.incorrectExplanation,
+                            ]}
+                          >
+                            <Ionicons
+                              name={
+                                isCorrect
+                                  ? "checkmark-circle-outline"
+                                  : "close-circle-outline"
+                              }
+                              size={21}
+                              color={isCorrect ? "#86EFAC" : "#FCA5A5"}
+                            />
 
-            <Pressable
-              style={[
-                styles.primaryAction,
-                (busy || (!lessonCompleted && !quizPassed)) &&
-                  styles.buttonDisabled,
-              ]}
-              onPress={() => {
-                void handleCompleteLesson();
-              }}
-              disabled={busy || (!lessonCompleted && !quizPassed)}
-            >
-              {busy ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={
-                      lessonCompleted ? "checkmark-circle" : "trophy-outline"
-                    }
-                    size={20}
-                    color="#FFFFFF"
-                  />
+                            <Text style={styles.explanationText}>
+                              {question.explanation}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </Reanimated.View>
+                    );
+                  })}
 
-                  <Text style={styles.primaryActionText}>
-                    {lessonCompleted
-                      ? "Completed"
-                      : quizPassed
-                        ? "Complete Lesson"
-                        : "Pass Quiz First"}
-                  </Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-        </View>
+                  {quizSubmitted ? (
+                    <Reanimated.View
+                      entering={ZoomIn.duration(520)}
+                      style={[
+                        styles.quizResult,
+                        quizPassed
+                          ? styles.quizResultPassed
+                          : styles.quizResultFailed,
+                      ]}
+                    >
+                      <Ionicons
+                        name={quizPassed ? "trophy" : "refresh-circle"}
+                        size={28}
+                        color={quizPassed ? "#FACC15" : "#FCA5A5"}
+                      />
 
-        {message ? (
-          <View style={styles.successMessage}>
-            <Text style={styles.successText}>{message}</Text>
-          </View>
-        ) : null}
+                      <View style={styles.quizResultText}>
+                        <Text style={styles.quizResultTitle}>
+                          {quizPassed ? "Quiz passed!" : "Almost there"}
+                        </Text>
 
-        {errorMessage ? (
-          <View style={styles.errorMessage}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          </View>
-        ) : null}
+                        <Text style={styles.quizResultScore}>
+                          You answered {quizScore} of {quizQuestions.length}{" "}
+                          correctly
+                        </Text>
+                      </View>
 
-        <View style={styles.notesCard}>
-          <Text style={styles.sectionTitle}>My Notes</Text>
-
-          <TextInput
-            style={styles.noteInput}
-            value={noteContent}
-            onChangeText={setNoteContent}
-            placeholder="Write something you want to remember"
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            editable={!busy}
-          />
-
-          <Pressable
-            style={[
-              styles.saveNoteButton,
-              (!noteContent.trim() || busy) && styles.buttonDisabled,
-            ]}
-            onPress={() => {
-              void handleSaveNote();
-            }}
-            disabled={!noteContent.trim() || busy}
-          >
-            <Ionicons name="save-outline" size={19} color="#FFFFFF" />
-
-            <Text style={styles.saveNoteText}>Save Note</Text>
-          </Pressable>
-
-          <View style={styles.notesList}>
-            {notes.length === 0 ? (
-              <Text style={styles.noNotes}>No notes saved for this lesson</Text>
-            ) : (
-              notes.map((note) => (
-                <View key={note.noteId} style={styles.noteItem}>
-                  <View style={styles.noteContent}>
-                    <Text style={styles.noteText}>{note.content}</Text>
-
-                    <Text style={styles.noteDate}>
-                      {note.updatedAt
-                        ? note.updatedAt.toDate().toLocaleString()
-                        : "Saving"}
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    style={styles.deleteNoteButton}
-                    onPress={() => {
-                      void handleDeleteNote(note.noteId);
-                    }}
-                    disabled={busy}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete note"
-                  >
-                    <Ionicons name="trash-outline" size={20} color="#F87171" />
-                  </Pressable>
+                      {!quizPassed ? (
+                        <Pressable
+                          style={styles.retryButton}
+                          onPress={handleRetryQuiz}
+                        >
+                          <Text style={styles.retryButtonText}>Try Again</Text>
+                        </Pressable>
+                      ) : null}
+                    </Reanimated.View>
+                  ) : (
+                    <Pressable
+                      style={[
+                        styles.submitQuizButton,
+                        answeredQuestionCount !== quizQuestions.length &&
+                          styles.buttonDisabled,
+                      ]}
+                      onPress={handleSubmitQuiz}
+                      disabled={answeredQuestionCount !== quizQuestions.length}
+                    >
+                      <Text style={styles.submitQuizButtonText}>
+                        Submit Answers ({answeredQuestionCount}/
+                        {quizQuestions.length})
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
-              ))
-            )}
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.contentUnavailableCard}>
+              <Ionicons
+                name="construct-outline"
+                size={35}
+                color={Colors.textMuted}
+              />
+
+              <Text style={styles.contentUnavailableTitle}>
+                Lesson material coming soon
+              </Text>
+
+              <Text style={styles.contentUnavailableText}>
+                The progress system is ready for this lesson
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.progressCard}>
+            <View style={styles.progressHeader}>
+              <Text style={styles.sectionTitle}>Lesson Progress</Text>
+
+              <Text style={styles.progressPercent}>{progressPercent}%</Text>
+            </View>
+
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${progressPercent}%` as `${number}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.rewardText}>Reward: {lesson.xpReward} XP</Text>
+
+            <View style={styles.buttonRow}>
+              <Pressable
+                style={[
+                  styles.secondaryAction,
+                  (busy || lessonCompleted || !hasUnsavedProgress) &&
+                    styles.buttonDisabled,
+                ]}
+                onPress={() => {
+                  void handleSaveProgress();
+                }}
+                disabled={busy || lessonCompleted || !hasUnsavedProgress}
+              >
+                <Text style={styles.secondaryActionText}>
+                  {lessonCompleted
+                    ? "Progress Complete"
+                    : hasUnsavedProgress
+                      ? `Save ${nextProgress}% Progress`
+                      : progressPercent > 0
+                        ? "Progress Saved"
+                        : "Answer Quiz to Save"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.primaryAction,
+                  (busy || (!lessonCompleted && !quizPassed)) &&
+                    styles.buttonDisabled,
+                ]}
+                onPress={() => {
+                  void handleCompleteLesson();
+                }}
+                disabled={busy || (!lessonCompleted && !quizPassed)}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={
+                        lessonCompleted ? "checkmark-circle" : "trophy-outline"
+                      }
+                      size={20}
+                      color="#FFFFFF"
+                    />
+
+                    <Text style={styles.primaryActionText}>
+                      {lessonCompleted
+                        ? "Completed"
+                        : quizPassed
+                          ? "Complete Lesson"
+                          : "Pass Quiz First"}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
           </View>
-        </View>
+
+          {message ? (
+            <View style={styles.successMessage}>
+              <Text style={styles.successText}>{message}</Text>
+            </View>
+          ) : null}
+
+          {errorMessage ? (
+            <View style={styles.errorMessage}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.notesCard}>
+            <Text style={styles.sectionTitle}>My Notes</Text>
+
+            <TextInput
+              style={styles.noteInput}
+              value={noteContent}
+              onChangeText={setNoteContent}
+              placeholder="Write something you want to remember"
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              editable={!busy}
+            />
+
+            <Pressable
+              style={[
+                styles.saveNoteButton,
+                (!noteContent.trim() || busy) && styles.buttonDisabled,
+              ]}
+              onPress={() => {
+                void handleSaveNote();
+              }}
+              disabled={!noteContent.trim() || busy}
+            >
+              <Ionicons name="save-outline" size={19} color="#FFFFFF" />
+
+              <Text style={styles.saveNoteText}>Save Note</Text>
+            </Pressable>
+
+            <View style={styles.notesList}>
+              {notes.length === 0 ? (
+                <Text style={styles.noNotes}>
+                  No notes saved for this lesson
+                </Text>
+              ) : (
+                notes.map((note) => (
+                  <View key={note.noteId} style={styles.noteItem}>
+                    <View style={styles.noteContent}>
+                      <Text style={styles.noteText}>{note.content}</Text>
+
+                      <Text style={styles.noteDate}>
+                        {note.updatedAt
+                          ? note.updatedAt.toDate().toLocaleString()
+                          : "Saving"}
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      style={styles.deleteNoteButton}
+                      onPress={() => {
+                        void handleDeleteNote(note.noteId);
+                      }}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete note"
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color="#F87171"
+                      />
+                    </Pressable>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </Reanimated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1509,6 +1723,73 @@ const styles = StyleSheet.create({
 
   successText: {
     color: "#86EFAC",
+    textAlign: "center",
+  },
+
+  celebrationLayer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.34)",
+  },
+
+  celebrationCard: {
+    width: "100%",
+    maxWidth: 370,
+    alignItems: "center",
+    backgroundColor: "#17111F",
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 30,
+    shadowColor: Colors.primary,
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.38,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+
+  celebrationIcon: {
+    width: 82,
+    height: 82,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#422006",
+    borderWidth: 2,
+    borderColor: "#EAB308",
+    borderRadius: 41,
+    marginBottom: 18,
+  },
+
+  celebrationTitle: {
+    color: Colors.textPrimary,
+    fontSize: 25,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  celebrationXp: {
+    color: "#FACC15",
+    fontSize: 22,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+
+  celebrationText: {
+    color: Colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
     textAlign: "center",
   },
 

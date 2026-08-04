@@ -286,7 +286,7 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <Text style={styles.appTitle}>SkillForge</Text>
+          <Text style={styles.appTitle}>Sacbé Forge</Text>
         </View>
 
         <AppCard>

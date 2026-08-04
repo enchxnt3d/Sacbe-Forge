@@ -117,7 +117,7 @@ export default function AuthScreen() {
 
         <Text style={styles.subtitle}>
           {isSignUp
-            ? "Start saving your Sacbé learning progress"
+            ? "Start saving your Sacbé Forge learning progress"
             : "Sign in to continue your learning path"}
         </Text>
 

@@ -1,21 +1,22 @@
 import {
-    collection,
-    doc,
-    getDoc,
-    onSnapshot,
-    query,
-    runTransaction,
-    serverTimestamp,
-    setDoc,
-    where,
-    type FirestoreError,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  where,
+  type FirestoreError,
 } from "firebase/firestore";
 
 import { db } from "../config/firebase";
 import type {
-    CompleteLessonInput,
-    CompleteLessonResult,
-    LessonProgress,
+  CompleteLessonInput,
+  CompleteLessonResult,
+  LessonProgress,
+  SaveLessonProgressInput,
 } from "../types/progress";
 import type { UserProfile } from "../types/user";
 import { awardProgressAchievements } from "./achievementService";
@@ -43,13 +44,26 @@ function getLocalDateKey(date = new Date()): string {
   return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 10);
 }
 
+function normalizeLessonProgress(progress: LessonProgress): LessonProgress {
+  // Ignore old unfinished percentages that were created by button clicks
+  if (progress.status !== "completed" && progress.progressVersion !== 2) {
+    return {
+      ...progress,
+      status: "not-started",
+      progressPercent: 0,
+      quizAnswers: {},
+      quizSubmitted: false,
+    };
+  }
+
+  return progress;
+}
+
 export async function saveLessonProgress(
   userId: string,
-  lessonId: string,
-  pathId: string,
-  progressPercent: number,
+  input: SaveLessonProgressInput,
 ): Promise<void> {
-  const progressReference = getProgressReference(userId, lessonId);
+  const progressReference = getProgressReference(userId, input.lessonId);
   const progressSnapshot = await getDoc(progressReference);
 
   const existingProgress = progressSnapshot.exists()
@@ -62,15 +76,31 @@ export async function saveLessonProgress(
   }
 
   // Keep unfinished progress between 0 and 99
-  const safeProgress = Math.min(99, Math.max(0, Math.round(progressPercent)));
+  const safeProgress = Math.min(
+    99,
+    Math.max(0, Math.round(input.progressPercent)),
+  );
+
+  // Keep only valid quiz answer indexes in Firestore
+  const safeQuizAnswers = Object.fromEntries(
+    Object.entries(input.quizAnswers).filter(
+      ([questionId, answerIndex]) =>
+        questionId.trim().length > 0 &&
+        Number.isInteger(answerIndex) &&
+        answerIndex >= 0,
+    ),
+  );
 
   await setDoc(
     progressReference,
     {
-      lessonId,
-      pathId,
+      lessonId: input.lessonId,
+      pathId: input.pathId,
       status: safeProgress > 0 ? "in-progress" : "not-started",
       progressPercent: safeProgress,
+      progressVersion: 2,
+      quizAnswers: safeQuizAnswers,
+      quizSubmitted: input.quizSubmitted,
       xpEarned: existingProgress?.xpEarned ?? 0,
       startedAt: existingProgress?.startedAt ?? serverTimestamp(),
       completedAt: null,
@@ -90,7 +120,7 @@ export async function getLessonProgress(
     return null;
   }
 
-  return progressSnapshot.data() as LessonProgress;
+  return normalizeLessonProgress(progressSnapshot.data() as LessonProgress);
 }
 
 export function subscribeToPathProgress(
@@ -108,8 +138,8 @@ export function subscribeToPathProgress(
   return onSnapshot(
     progressQuery,
     (snapshot) => {
-      const progress = snapshot.docs.map(
-        (progressDocument) => progressDocument.data() as LessonProgress,
+      const progress = snapshot.docs.map((progressDocument) =>
+        normalizeLessonProgress(progressDocument.data() as LessonProgress),
       );
 
       onProgressChange(progress);
@@ -257,6 +287,7 @@ export async function completeLesson(
           pathId: input.pathId,
           status: "completed",
           progressPercent: 100,
+          progressVersion: 2,
           xpEarned: safeXpReward,
           startedAt: existingProgress?.startedAt ?? serverTimestamp(),
           completedAt: serverTimestamp(),

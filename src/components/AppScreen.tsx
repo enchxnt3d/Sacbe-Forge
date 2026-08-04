@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet } from "react-native";
+import Animated, { Easing, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Colors } from "../constants/colors";
@@ -12,6 +13,15 @@ interface AppScreenProps {
 }
 
 const MAX_CONTENT_WIDTH = 1200;
+const SCREEN_ENTRY_DURATION = 520;
+
+// Keep this builder stable so every screen uses the same motion
+const SCREEN_ENTRANCE = FadeInDown.duration(SCREEN_ENTRY_DURATION)
+  .easing(Easing.out(Easing.cubic))
+  .withInitialValues({
+    opacity: 0,
+    translateY: 36,
+  });
 
 export default function AppScreen({
   children,
@@ -38,10 +48,14 @@ export default function AppScreen({
           showsVerticalScrollIndicator={false}
         >
           {/* Limit wide desktop screens without changing mobile */}
-          <View style={styles.scrollFrame}>{children}</View>
+          <Animated.View entering={SCREEN_ENTRANCE} style={styles.scrollFrame}>
+            {children}
+          </Animated.View>
         </ScrollView>
       ) : (
-        <View style={styles.contentFrame}>{children}</View>
+        <Animated.View entering={SCREEN_ENTRANCE} style={styles.contentFrame}>
+          {children}
+        </Animated.View>
       )}
     </SafeAreaView>
   );
@@ -76,6 +90,7 @@ const styles = StyleSheet.create({
   },
 
   scrollFrame: {
+    flexGrow: 1,
     width: "100%",
     maxWidth: MAX_CONTENT_WIDTH,
     alignSelf: "center",
